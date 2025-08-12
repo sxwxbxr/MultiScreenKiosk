@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Kiosk App (Python Module)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "modules.main",
+            "justMyCode": true,
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "QTWEBENGINE_DISABLE_SANDBOX": "1",
+                "KIOSK_LOG_DIR": "${workspaceFolder}/logs"
+            }
+        }
+    ]
+}

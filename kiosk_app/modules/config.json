@@ -1,0 +1,23 @@
+{
+  "browser_urls": [
+    "https://www.google.com",
+    "https://chat.openai.com",
+    "https://mail.proton.me"
+  ],
+  "local_app": {
+    "launch_cmd": "C:\\\\Windows\\\\System32\\\\notepad.exe",
+    "embed_mode": "native_window",
+    "window_title_pattern": ".*(Editor|Notepad).*",
+    "web_url": null
+  },
+  "ui": {
+    "start_mode": "single",
+    "sidebar_width": 120,
+    "sidebar_titles": ["Google", "ChatGPT", "ProtonMail", "Editor"]
+  },
+  "kiosk": {
+    "monitor_index": 0,
+    "disable_system_keys": true,
+    "kiosk_fullscreen": true
+  }
+}
