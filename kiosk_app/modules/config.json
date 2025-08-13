@@ -1,23 +1,71 @@
 {
+  "sources": [
+    {
+      "type": "browser",
+      "name": "Google",
+      "url": "https://www.google.com"
+    },
+    {
+      "type": "browser",
+      "name": "ChatGPT",
+      "url": "https://chat.openai.com"
+    },
+    {
+      "type": "browser",
+      "name": "ProtonMail",
+      "url": "https://mail.proton.me"
+    },
+    {
+      "type": "browser",
+      "name": "Wikipedia",
+      "url": "https://www.wikipedia.org"
+    },
+    {
+      "type": "browser",
+      "name": "Google 2",
+      "url": "https://www.google.com"
+    },
+    {
+      "type": "browser",
+      "name": "Google 3",
+      "url": "https://www.google.com"
+    },
+    {
+      "type": "browser",
+      "name": "Google 4",
+      "url": "https://www.google.com"
+    },
+    {
+      "type": "browser",
+      "name": "Google 5",
+      "url": "https://www.google.com"
+    }
+  ],
+  "ui": {
+    "start_mode": "quad",
+    "sidebar_width": 96,
+    "nav_orientation": "left",
+    "show_setup_on_start": false
+  },
+  "kiosk": {
+    "monitor_index": 0,
+    "disable_system_keys": true,
+    "kiosk_fullscreen": true
+  },
   "browser_urls": [
     "https://www.google.com",
     "https://chat.openai.com",
-    "https://mail.proton.me"
+    "https://mail.proton.me",
+    "https://www.wikipedia.org",
+    "https://www.google.com",
+    "https://www.google.com",
+    "https://www.google.com",
+    "https://www.google.com"
   ],
   "local_app": {
     "launch_cmd": "C:\\\\Windows\\\\System32\\\\notepad.exe",
     "embed_mode": "native_window",
     "window_title_pattern": ".*(Editor|Notepad).*",
     "web_url": null
-  },
-  "ui": {
-    "start_mode": "single",
-    "sidebar_width": 120,
-    "sidebar_titles": ["Google", "ChatGPT", "ProtonMail", "Editor"]
-  },
-  "kiosk": {
-    "monitor_index": 0,
-    "disable_system_keys": true,
-    "kiosk_fullscreen": true
   }
 }
