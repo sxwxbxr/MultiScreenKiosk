@@ -1,6 +1,5 @@
 import threading
 import time
-from typing import Optional
 import requests
 
 from PySide6.QtCore import QTimer, QObject, Signal
@@ -17,6 +16,7 @@ def make_webview() -> QWebEngineView:
 class BrowserService(QObject):
     page_ready = Signal()
     page_error = Signal(str)
+    page_loading = Signal()  # neu
 
     def __init__(self, view: QWebEngineView, url: str, name: str = "Browser"):
         super().__init__()
@@ -26,6 +26,7 @@ class BrowserService(QObject):
         self.log = get_logger(f"{__name__}.{name}")
         self.last_ok = time.time()
 
+        self.view.loadStarted.connect(self._on_load_started)
         self.view.loadFinished.connect(self._on_load_finished)
 
         self.reload_timer = QTimer(self)
@@ -39,6 +40,9 @@ class BrowserService(QObject):
 
     def stop(self):
         self.reload_timer.stop()
+
+    def _on_load_started(self):
+        self.page_loading.emit()
 
     def _on_load_finished(self, ok: bool):
         if ok:

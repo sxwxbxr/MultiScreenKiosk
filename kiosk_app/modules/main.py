@@ -1,95 +1,146 @@
+# modules/main.py
+from __future__ import annotations
 import sys
-import os
 import argparse
-from pathlib import Path
 
-from PySide6.QtWidgets import QApplication, QDialog
+from PySide6.QtWidgets import QApplication, QMessageBox, QDialog
 
-from modules.utils.logger import init_logging, get_logger
-from modules.utils.config_loader import load_config, save_config, Config, SourceSpec
-from modules.ui.app_state import AppState
+from modules.utils.config_loader import load_config, save_config, Config
+from modules.utils.logger import init_logging, get_logger, set_global_level
+from modules.ui.app_state import AppState, ViewMode
 from modules.ui.main_window import MainWindow
 from modules.ui.setup_dialog import SetupDialog
 
 
 def parse_args(argv=None):
-    parser = argparse.ArgumentParser(prog="kiosk_app", add_help=True)
-    parser.add_argument("-setup", "--setup", action="store_true",
-                        help="Setup beim Start anzeigen, unabhaengig von der Config")
-    parser.add_argument("--config", type=str, default=None,
-                        help="Pfad zur config.json")
-    return parser.parse_args(argv)
+    p = argparse.ArgumentParser(
+        prog="kiosk_app",
+        description="MultiScreen Kiosk Anwendung"
+    )
+    p.add_argument("--setup", "-setup", action="store_true",
+                   help="Setup Dialog beim Start anzeigen")
+    p.add_argument("--config", "-c", default="config.json",
+                   help="Pfad zur config.json")
+    p.add_argument("--log-level", "-l", default=None,
+                   help="Log Level ueberschreiben, z. B. DEBUG INFO WARNING ERROR")
+    return p.parse_args(argv)
 
 
-def main():
-    args = parse_args(sys.argv[1:])
+def _target_mode_from_cfg(cfg: Config) -> ViewMode:
+    return ViewMode.SINGLE if str(cfg.ui.start_mode).lower() == "single" else ViewMode.QUAD
+
+
+def apply_start_mode_to_state(state: AppState, cfg: Config) -> None:
+    """Setzt den Startmodus ohne direkt die Property zu schreiben."""
+    target = _target_mode_from_cfg(cfg)
+    current = getattr(state, "mode", None)
+
+    if current == target:
+        return
+
+    if hasattr(state, "set_mode"):
+        try:
+            state.set_mode(target)
+            return
+        except Exception:
+            pass
+    if hasattr(state, "setMode"):
+        try:
+            state.setMode(target)
+            return
+        except Exception:
+            pass
+
+    if hasattr(state, "toggle_mode"):
+        try:
+            state.toggle_mode()
+        except Exception:
+            pass
+
+
+def maybe_run_setup(cfg: Config, cfg_path: str, force: bool) -> Config:
+    """Zeigt optional den Setup Dialog an und speichert Aenderungen."""
+    want = bool(force or cfg.ui.show_setup_on_start)
+    if not want:
+        return cfg
+
+    log = get_logger(__name__)
+    dlg = SetupDialog(cfg)
+    res = dlg.exec()
+    if res == QDialog.Accepted:
+        try:
+            data = dlg.results()
+            if isinstance(data, dict):
+                if "sources" in data and data["sources"]:
+                    cfg.sources = data["sources"]
+                if "ui" in data and data["ui"]:
+                    ui = data["ui"]
+                    if "nav_orientation" in ui:
+                        cfg.ui.nav_orientation = ui["nav_orientation"]
+                    if "sidebar_width" in ui:
+                        cfg.ui.sidebar_width = int(ui["sidebar_width"])
+                    if "enable_hamburger" in ui:
+                        cfg.ui.enable_hamburger = bool(ui["enable_hamburger"])
+                    if "theme" in ui:
+                        cfg.ui.theme = str(ui["theme"])
+                    if "start_mode" in ui:
+                        cfg.ui.start_mode = str(ui["start_mode"])
+            save_config(cfg, cfg_path)
+            log.info("setup saved to %s", cfg_path, extra={"source": "setup"})
+        except Exception as ex:
+            log.error("setup save failed: %s", ex, extra={"source": "setup"})
+            QMessageBox.critical(None, "Fehler", f"Setup konnte nicht gespeichert werden:\n{ex}")
+    return cfg
+
+
+def main(argv=None) -> int:
+    args = parse_args(argv)
+
+    # Config laden und Logging initialisieren
+    cfg = load_config(args.config)
+    init_logging(cfg.logging)
+    log = get_logger(__name__)
+    if args.log_level:
+        set_global_level(args.log_level)
+
+    log.info("app starting", extra={"source": "main"})
 
     app = QApplication(sys.argv)
-    app.setApplicationName("KioskApp")
-    app.setDesktopSettingsAware(True)
 
-    log_dir = Path(os.getenv("KIOSK_LOG_DIR", ".")) / "logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    init_logging(log_dir / "kiosk.log")
-    log = get_logger(__name__)
+    # Optional Setup Dialog
+    cfg = maybe_run_setup(cfg, args.config, force=args.setup)
 
-    app_dir = Path(__file__).resolve().parent
-    cfg_path = Path(args.config) if args.config else (app_dir / "config.json")
+    # App State und Startmodus
+    state = AppState()
+    apply_start_mode_to_state(state, cfg)
 
+    # Hauptfenster bauen
     try:
-        cfg: Config = load_config(cfg_path)
-    except Exception as e:
-        print(f"Konfiguration ungueltig: {e}\nPfad: {cfg_path}")
-        return 1
+        win = MainWindow(cfg, state)
+    except Exception as ex:
+        log.error("MainWindow init failed: %s", ex, extra={"source": "main"}, exc_info=True)
+        QMessageBox.critical(None, "Startfehler", f"MainWindow konnte nicht erstellt werden:\n{ex}")
+        return 2
 
-    # Setup Dialog optional oder erzwungen per Parameter
-    force_setup = bool(args.setup)
-    if cfg.ui.show_setup_on_start or force_setup:
-        if force_setup:
-            print("[Info] Setup wurde per Parameter erzwungen (-setup).")
-        dlg = SetupDialog(
-            parent=None,
-            initial_urls=cfg.browser_urls,
-            initial_local_cmd=cfg.local_app.launch_cmd
-        )
-        if dlg.exec() == QDialog.Accepted:
-            res = dlg.results()
-            # Quellen uebernehmen
-            new_sources = []
-            new_browser_urls = []
-            for s in res["sources"]:
-                if s["type"] == "browser":
-                    new_sources.append(SourceSpec(type="browser", name=s["name"], url=s["url"]))
-                    new_browser_urls.append(s["url"])
-                else:
-                    new_sources.append(SourceSpec(
-                        type="local",
-                        name=s["name"],
-                        launch_cmd=s["launch_cmd"],
-                        window_title_pattern=s.get("window_title_pattern", "")
-                    ))
-            cfg.sources = new_sources
-            cfg.browser_urls = new_browser_urls
-            cfg.ui.nav_orientation = res["orientation"]
+    # Auf gewaehltem Monitor anzeigen
+    try:
+        win.show_on_monitor(cfg.kiosk.monitor_index)
+    except Exception:
+        pass
 
-            if res["save_to_file"]:
-                # Wenn gespeichert wird, schalten wir das Setup fuer kuenftige Starts ab.
-                # Per Parameter kannst du es jederzeit erneut erzwingen.
-                cfg.ui.show_setup_on_start = False
-                try:
-                    save_config(cfg_path, cfg)
-                    print(f"[Info] Konfiguration gespeichert: {cfg_path}")
-                except Exception as e:
-                    print(f"Speichern fehlgeschlagen: {e}")
-
-    state = AppState(start_mode=cfg.ui.start_mode, active_index=0)
-
-    win = MainWindow(cfg, state)
-    win.show_on_monitor(cfg.kiosk.monitor_index)
+    # Kiosk Vollbild
     if cfg.kiosk.kiosk_fullscreen:
-        win.enter_kiosk()
+        try:
+            win.enter_kiosk()
+        except Exception:
+            win.show()
+    else:
+        win.show()
 
-    return app.exec()
+    log.info("ui shown", extra={"source": "main"})
+    rc = app.exec()
+    log.info("app exit with code %s", rc, extra={"source": "main"})
+    return rc
 
 
 if __name__ == "__main__":

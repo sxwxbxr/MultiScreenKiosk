@@ -4,32 +4,30 @@ from PySide6.QtCore import Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QShortcut, QKeySequence
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QStackedWidget,
-    QGridLayout, QLabel, QApplication
+    QGridLayout, QLabel, QApplication, QToolButton, QMenu
 )
 
 from modules.ui.app_state import AppState, ViewMode
 from modules.ui.sidebar import Sidebar
+from modules.ui.settings_dialog import SettingsDialog
+from modules.ui.browser_host import BrowserHostWidget
 from modules.services.browser_services import BrowserService, make_webview
-from modules.services.local_app_service import LocalAppService, LocalAppWidget
-from modules.utils.config_loader import Config, SourceSpec
+from modules.services.local_app_service import LocalAppWidget
+from modules.utils.config_loader import Config, SourceSpec, save_config
 from modules.utils.logger import get_logger
 
 
 def _clear_layout(layout):
-    """Alle Widgets aus einem Layout loesen, Parent NICHT loeschen."""
     while layout.count():
         item = layout.takeAt(0)
         w = item.widget()
         if w:
             w.setParent(None)
 
-
 def _attach(widget: QWidget, host_layout):
-    """Widget in Host Layout einhaengen und anzeigen."""
     widget.setParent(host_layout.parentWidget())
     host_layout.addWidget(widget)
     widget.show()
-
 
 class MainWindow(QMainWindow):
     request_quit = Signal()
@@ -41,41 +39,75 @@ class MainWindow(QMainWindow):
         self.log = get_logger(__name__)
         self.setObjectName("MainWindow")
 
-        # Quellen aus Config
+        # Quellen
         self.sources: List[SourceSpec] = cfg.sources[:] if cfg.sources else []
         self.num_sources = len(self.sources)
-        self.current_page = 0      # fuer Quad Paging
-        self.page_size = 4         # 2x2 pro Seite
+        self.current_page = 0
+        self.page_size = 4
 
-        # Sidebar mit allen Namen
-        titles = [s.name for s in self.sources]
-        self.sidebar = Sidebar(
-            titles=titles,
-            width=cfg.ui.sidebar_width,
-            orientation=cfg.ui.nav_orientation
-        )
-        self.sidebar.view_selected.connect(self.on_select_view)
-        self.sidebar.toggle_mode.connect(self.on_toggle_mode)
-        self.sidebar.page_changed.connect(self.on_page_changed)
-
-        # Widgets fuer alle Quellen erzeugen
+        # Widgets fuer Quellen
         self.source_widgets: List[QWidget] = []
         self.browser_services: List[BrowserService | None] = []
         self._create_source_widgets()
 
-        # Single Host: genau ein aktives Widget
+        # Container
         self.single_host = QWidget(self)
         self.single_layout = QVBoxLayout(self.single_host)
         self.single_layout.setContentsMargins(0, 0, 0, 0)
         self.single_layout.setSpacing(0)
 
-        # Quad Grid: dynamische Anordnung
         self.grid = QWidget(self)
         self.grid_layout = QGridLayout(self.grid)
         self.grid_layout.setContentsMargins(0, 0, 0, 0)
         self.grid_layout.setSpacing(0)
 
-        # Root Layout je nach Orientierung
+        self.mode_stack = QStackedWidget(self)
+        self.mode_stack.addWidget(self.single_host)  # 0
+        self.mode_stack.addWidget(self.grid)         # 1
+
+        # Overlay Burger
+        self.overlay_burger = QToolButton(self)
+        self.overlay_burger.setText("☰")
+        self.overlay_burger.setToolTip("Menue")
+        self.overlay_burger.setVisible(False)
+        self.overlay_burger.clicked.connect(self._open_overlay_menu)
+
+        # Root und Sidebar
+        self._build_root_and_sidebar()
+
+        # Theme
+        self.apply_theme(self.cfg.ui.theme)
+
+        # Shortcuts
+        for i in range(4):
+            sc = QShortcut(QKeySequence(f"Ctrl+{i+1}"), self)
+            sc.activated.connect(lambda idx=i: self._select_by_position(idx))
+        QShortcut(QKeySequence("Ctrl+Right"), self).activated.connect(lambda: self._page_delta(+1))
+        QShortcut(QKeySequence("Ctrl+Left"), self).activated.connect(lambda: self._page_delta(-1))
+        QShortcut(QKeySequence("Ctrl+Q"), self).activated.connect(self.on_toggle_mode)
+        QShortcut(QKeySequence("F11"), self).activated.connect(self.toggle_kiosk)
+
+        # Services
+        self._start_services()
+
+        # Startmodus
+        self.apply_mode(self.state.mode)
+        self.on_select_view(0 if self.num_sources == 0 else min(self.state.active_index, self.num_sources - 1))
+
+        # Watchdog
+        self.reconnect_timer = QTimer(self)
+        self.reconnect_timer.setInterval(5000)
+        self.reconnect_timer.timeout.connect(self._tick_watchdogs)
+        self.reconnect_timer.start()
+
+    # ---------- Root und Sidebar ----------
+    def _build_root_and_sidebar(self):
+        titles = [s.name for s in self.sources]
+
+        old = self.centralWidget()
+        if old:
+            old.deleteLater()
+
         central = QWidget(self)
         if self.cfg.ui.nav_orientation == "top":
             root = QVBoxLayout(central)
@@ -84,47 +116,87 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        root.addWidget(self.sidebar)
+        self.sidebar = Sidebar(
+            titles=titles,
+            width=self.cfg.ui.sidebar_width,
+            orientation=self.cfg.ui.nav_orientation,
+            enable_hamburger=self.cfg.ui.enable_hamburger,
+            logo_path=self.cfg.ui.logo_path
+        )
+        self.sidebar.view_selected.connect(self.on_select_view)
+        self.sidebar.toggle_mode.connect(self.on_toggle_mode)
+        self.sidebar.page_changed.connect(self.on_page_changed)
+        self.sidebar.request_settings.connect(self.open_settings)
+        self.sidebar.collapsed_changed.connect(self.on_sidebar_collapsed_changed)
 
-        # Modus Umschalter
-        self.mode_stack = QStackedWidget(self)
-        self.mode_stack.addWidget(self.single_host)  # 0 single
-        self.mode_stack.addWidget(self.grid)         # 1 quad
+        root.addWidget(self.sidebar)
         root.addWidget(self.mode_stack, 1)
         self.setCentralWidget(central)
 
-        # Shortcuts
-        for i in range(4):
-            sc = QShortcut(QKeySequence(f"Ctrl+{i+1}"), self)
-            sc.activated.connect(lambda idx=i: self._select_by_position(idx))
-        QShortcut(QKeySequence("Ctrl+Right"), self).activated.connect(self.sidebar.next_page)
-        QShortcut(QKeySequence("Ctrl+Left"), self).activated.connect(self.sidebar.prev_page)
-        QShortcut(QKeySequence("Ctrl+Q"), self).activated.connect(self.on_toggle_mode)
-        QShortcut(QKeySequence("F11"), self).activated.connect(self.toggle_kiosk)
+        self._place_overlay_burger()
 
-        # Start Services
-        self._start_services()
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+        self._place_overlay_burger()
 
-        # Startmodus anwenden und erste Auswahl setzen
-        self.apply_mode(self.state.mode)
-        initial_index = 0 if self.num_sources == 0 else min(self.state.active_index, self.num_sources - 1)
-        self.on_select_view(initial_index)
+    def _place_overlay_burger(self):
+        margin = 8
+        self.overlay_burger.move(margin, margin)
+        self.overlay_burger.raise_()
 
-        # Watchdog
-        self.reconnect_timer = QTimer(self)
-        self.reconnect_timer.setInterval(5000)
-        self.reconnect_timer.timeout.connect(self._tick_watchdogs)
-        self.reconnect_timer.start()
+    def on_sidebar_collapsed_changed(self, collapsed: bool):
+        self.set_sidebar_collapsed(collapsed)
 
-    # -------- Widget Erstellung --------
+    def set_sidebar_collapsed(self, collapsed: bool):
+        """Sidebar wirklich ein bzw. ausklappen und Layout refreshen."""
+        if self.sidebar:
+            self.sidebar.set_collapsed(collapsed)          # interner Zustand
+            self.sidebar.setVisible(not collapsed)         # Widget sichtbar
+            self.sidebar.updateGeometry()
+            cw = self.centralWidget()
+            if cw and cw.layout():
+                cw.layout().invalidate()
+                cw.layout().activate()
+        self.overlay_burger.setVisible(collapsed)
+        self._place_overlay_burger()
+
+    def _open_overlay_menu(self):
+        m = QMenu(self)
+        for idx, title in enumerate([s.name for s in self.sources]):
+            act = m.addAction(title)
+            act.triggered.connect(lambda _=False, i=idx: self.on_select_view(i))
+        m.addSeparator()
+        act_show = m.addAction("Leiste anzeigen")
+        act_show.triggered.connect(lambda: self.set_sidebar_collapsed(False))
+        act_switch = m.addAction("Switch")
+        act_switch.triggered.connect(self.on_toggle_mode)
+        act_settings = m.addAction("Einstellungen")
+        act_settings.triggered.connect(self.open_settings)
+        pos = self.overlay_burger.mapToGlobal(self.overlay_burger.rect().bottomLeft())
+        m.exec(pos)
+
+    # ---------- Erstellung der Quellenwidgets ----------
     def _create_source_widgets(self):
+        self.source_widgets.clear()
+        self.browser_services.clear()
         for s in self.sources:
             if s.type == "browser":
                 view = make_webview()
-                self.source_widgets.append(view)
-                self.browser_services.append(BrowserService(view, s.url, name=f"Browser:{s.name}"))
+                host = BrowserHostWidget(
+                    placeholder_enabled=self.cfg.ui.placeholder_enabled,
+                    gif_path=self.cfg.ui.placeholder_gif_path
+                )
+                host.set_view(view)
+                if self.cfg.ui.placeholder_enabled:
+                    host.show_placeholder()
+                self.source_widgets.append(host)
+
+                svc = BrowserService(view, s.url, name=f"Browser:{s.name}")
+                svc.page_loading.connect(host.show_placeholder)
+                svc.page_ready.connect(host.show_view)
+                svc.page_error.connect(lambda _msg, h=host: h.show_placeholder())
+                self.browser_services.append(svc)
             else:
-                # Lokale App Widget
                 w = LocalAppWidget(type("Tmp", (), {
                     "launch_cmd": s.launch_cmd,
                     "embed_mode": "native_window",
@@ -134,18 +206,15 @@ class MainWindow(QMainWindow):
                 self.source_widgets.append(w)
                 self.browser_services.append(None)
 
-    # -------- Layout Umschaltungen --------
+    # ---------- Layout Umschaltungen ----------
     def _attach_single(self, idx: int):
-        """Aktives Widget in den Single Host haengen."""
         if not (0 <= idx < len(self.source_widgets)):
             return
         _clear_layout(self.single_layout)
         _attach(self.source_widgets[idx], self.single_layout)
 
     def _attach_quad_page(self, page: int):
-        """Dynamische 2x2 Seite aufbauen. Weniger als 4 Fenster werden ohne Platzhalter angezeigt."""
         self.current_page = page
-        # Grid leeren
         while self.grid_layout.count():
             it = self.grid_layout.takeAt(0)
             w = it.widget()
@@ -161,7 +230,6 @@ class MainWindow(QMainWindow):
 
         n = len(items)
 
-        # alle Stretches zuruecksetzen
         for r in range(2):
             self.grid_layout.setRowStretch(r, 0)
         for c in range(2):
@@ -178,45 +246,109 @@ class MainWindow(QMainWindow):
             return
 
         if n == 1:
-            self.grid_layout.addWidget(items[0], 0, 0, 2, 2)  # full area
-            self.grid_layout.setRowStretch(0, 1)
-            self.grid_layout.setRowStretch(1, 1)
-            self.grid_layout.setColumnStretch(0, 1)
-            self.grid_layout.setColumnStretch(1, 1)
-            return
-
-        if n == 2:
-            # 1:1 nebeneinander
+            self.grid_layout.addWidget(items[0], 0, 0, 2, 2)
+        elif n == 2:
             self.grid_layout.addWidget(items[0], 0, 0, 2, 1)
             self.grid_layout.addWidget(items[1], 0, 1, 2, 1)
-            self.grid_layout.setRowStretch(0, 1)
-            self.grid_layout.setRowStretch(1, 1)
-            self.grid_layout.setColumnStretch(0, 1)
-            self.grid_layout.setColumnStretch(1, 1)
-            return
-
-        if n == 3:
-            # oben 2, unten 1 ueber volle Breite
+        elif n == 3:
             self.grid_layout.addWidget(items[0], 0, 0, 1, 1)
             self.grid_layout.addWidget(items[1], 0, 1, 1, 1)
             self.grid_layout.addWidget(items[2], 1, 0, 1, 2)
-            self.grid_layout.setRowStretch(0, 1)
-            self.grid_layout.setRowStretch(1, 1)
-            self.grid_layout.setColumnStretch(0, 1)
-            self.grid_layout.setColumnStretch(1, 1)
-            return
+        else:
+            self.grid_layout.addWidget(items[0], 0, 0)
+            self.grid_layout.addWidget(items[1], 0, 1)
+            self.grid_layout.addWidget(items[2], 1, 0)
+            self.grid_layout.addWidget(items[3], 1, 1)
 
-        # n >= 4: klassisch 2x2
-        self.grid_layout.addWidget(items[0], 0, 0)
-        self.grid_layout.addWidget(items[1], 0, 1)
-        self.grid_layout.addWidget(items[2], 1, 0)
-        self.grid_layout.addWidget(items[3], 1, 1)
         self.grid_layout.setRowStretch(0, 1)
         self.grid_layout.setRowStretch(1, 1)
         self.grid_layout.setColumnStretch(0, 1)
         self.grid_layout.setColumnStretch(1, 1)
 
-    # -------- Slots --------
+    # ---------- Einstellungen ----------
+    def open_settings(self):
+        dlg = SettingsDialog(
+            nav_orientation=self.cfg.ui.nav_orientation,
+            enable_hamburger=self.cfg.ui.enable_hamburger,
+            placeholder_enabled=self.cfg.ui.placeholder_enabled,
+            placeholder_gif_path=self.cfg.ui.placeholder_gif_path,
+            theme=self.cfg.ui.theme,
+            logo_path=self.cfg.ui.logo_path,
+            parent=self
+        )
+        if dlg.exec():
+            res = dlg.results()
+
+            # Beenden gewuenscht
+            if res.get("quit_requested"):
+                self.close()
+                return
+
+            self.cfg.ui.theme = res["theme"]
+            self.cfg.ui.nav_orientation = res["nav_orientation"]
+            self.cfg.ui.enable_hamburger = res["enable_hamburger"]
+            self.cfg.ui.placeholder_enabled = res["placeholder_enabled"]
+            self.cfg.ui.placeholder_gif_path = res["placeholder_gif_path"]
+            self.cfg.ui.logo_path = res["logo_path"]
+
+            # Anwenden
+            self.apply_theme(self.cfg.ui.theme)
+            self._build_root_and_sidebar()
+            if not self.cfg.ui.enable_hamburger:
+                self.set_sidebar_collapsed(False)
+
+            for w in self.source_widgets:
+                if isinstance(w, BrowserHostWidget):
+                    w.set_placeholder_enabled(self.cfg.ui.placeholder_enabled)
+                    w.set_placeholder_gif(self.cfg.ui.placeholder_gif_path)
+                    if not self.cfg.ui.placeholder_enabled:
+                        w.show_view()
+
+            self.sidebar.set_titles([s.name for s in self.sources])
+            self.sidebar.set_active_global_index(self.state.active_index)
+
+            try:
+                from pathlib import Path
+                cfg_path = Path(__file__).resolve().parents[1] / "config.json"
+                save_config(cfg_path, self.cfg)
+            except Exception:
+                pass
+
+
+    def apply_theme(self, theme: str):
+        if theme == "light":
+            self.setStyleSheet("""
+                QWidget { background: #f4f4f4; color: #202020; }
+                QToolButton, QPushButton { background: #ffffff; border: 1px solid #d0d0d0; padding: 6px; }
+                QLineEdit { background: #ffffff; border: 1px solid #d0d0d0; padding: 4px; }
+                QCheckBox::indicator { width: 16px; height: 16px; border: 1px solid #999; background: #fff; }
+                QCheckBox::indicator:checked { background: #0078d4; image: none; }
+            """)
+        else:
+            self.setStyleSheet("""
+                QWidget { background: #121212; color: #e0e0e0; }
+                QToolButton, QPushButton { background: #1f1f1f; border: 1px solid #2a2a2a; padding: 6px; }
+                QLineEdit { background: #1b1b1b; border: 1px solid #2a2a2a; padding: 4px; }
+                QCheckBox::indicator { width: 16px; height: 16px; border: 1px solid #5a5a5a; background: #2a2a2a; }
+                QCheckBox::indicator:checked { background: #3b82f6; image: none; border: 1px solid #3b82f6; }
+            """)
+
+    # ---------- Paging Helfer ----------
+    def _page_delta(self, delta: int):
+        if self.sidebar and self.sidebar.isVisible():
+            if delta > 0:
+                self.sidebar.next_page()
+            else:
+                self.sidebar.prev_page()
+        else:
+            max_page = max(0, (self.num_sources - 1) // self.page_size)
+            new_page = max(0, min(max_page, self.current_page + delta))
+            if new_page != self.current_page:
+                self.current_page = new_page
+                if self.state.mode == ViewMode.QUAD:
+                    self._attach_quad_page(self.current_page)
+
+    # ---------- Slots ----------
     def _select_by_position(self, pos: int):
         idx = self.current_page * self.page_size + pos
         if 0 <= idx < self.num_sources:
@@ -239,7 +371,8 @@ class MainWindow(QMainWindow):
         else:
             self.mode_stack.setCurrentIndex(1)
             self._attach_quad_page(self.current_page)
-        self.sidebar.set_active_global_index(self.state.active_index)
+        if self.sidebar and self.sidebar.isVisible():
+            self.sidebar.set_active_global_index(self.state.active_index)
 
     @Slot(int)
     def on_select_view(self, idx: int):
@@ -248,10 +381,10 @@ class MainWindow(QMainWindow):
         self.state.set_active(idx)
         if self.state.mode == ViewMode.SINGLE:
             self._attach_single(idx)
-        # bei Quad bleibt seitenbasierte Darstellung bestehen
-        self.sidebar.set_active_global_index(idx)
+        if self.sidebar and self.sidebar.isVisible():
+            self.sidebar.set_active_global_index(idx)
 
-    # -------- Window mgmt --------
+    # ---------- Window mgmt ----------
     def show_on_monitor(self, monitor_index: int):
         screens = QApplication.screens()
         idx = max(0, min(monitor_index, len(screens) - 1))
@@ -259,11 +392,9 @@ class MainWindow(QMainWindow):
         self.setGeometry(geo)
 
     def _start_services(self):
-        # Browser starten
         for svc in self.browser_services:
             if svc is not None:
                 svc.start()
-        # Lokale starten
         for w in self.source_widgets:
             if isinstance(w, LocalAppWidget):
                 w.start()
@@ -289,17 +420,14 @@ class MainWindow(QMainWindow):
             self.enter_kiosk()
 
     def closeEvent(self, ev):
-        # Schliessen nur mit Shift im Vollbild
         if self.isFullScreen():
             mods = QApplication.keyboardModifiers()
             if not mods & Qt.ShiftModifier:
                 ev.ignore()
                 return
-        # Browser stoppen
         for svc in self.browser_services:
             if svc is not None:
                 svc.stop()
-        # Lokale stoppen
         for w in self.source_widgets:
             if isinstance(w, LocalAppWidget):
                 w.stop()

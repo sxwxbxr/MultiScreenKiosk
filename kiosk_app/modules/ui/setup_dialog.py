@@ -1,242 +1,263 @@
+# modules/ui/setup_dialog.py
 from __future__ import annotations
-
-import os
-import re
-from typing import List, Dict, Any
+from typing import Dict, Any, List, Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QLineEdit, QPushButton,
-    QFileDialog, QComboBox, QCheckBox, QWidget, QMessageBox, QScrollArea
+    QDialog, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QComboBox,
+    QLineEdit, QPushButton, QFileDialog, QCheckBox, QSpinBox, QMessageBox, QGroupBox
 )
+
+from modules.utils.config_loader import Config, SourceSpec
+from modules.utils.logger import get_logger
 
 
 class SetupDialog(QDialog):
     """
-    Dynamische Setup UI:
-    - Anzahl Fenster: 2,4,6,8,10,...
-    - Pro Fenster: Typ (Browser/Lokal), Name, URL bzw. EXE und Titel Regex
-    - Orientierung: left oder top
-    - Optional: Speichern in config.json
+    Einfacher Setup Dialog:
+      - Anzahl Fenster: 2 4 6 8 10
+      - pro Fenster: Typ Browser oder Lokal, Name, URL oder Pfad mit Browse, optionale Patterns
+      - UI Einstellungen: Ausrichtung, Sidebar Breite, Hamburger, Theme, Startmodus
+    Rueckgabe via results() als Dict mit keys "sources" und "ui".
     """
 
-    COUNT_CHOICES = [2, 4, 6, 8, 10]
-
-    def __init__(self, parent=None, initial_urls: List[str] | None = None, initial_local_cmd: str | None = None):
-        super().__init__(parent)
-        self.setWindowTitle("Kiosk Setup")
+    def __init__(self, cfg: Config, parent: Optional[QWidget] = None):
+        super().__init__(parent)  # <-- richtig, parent ist ein QWidget
+        self.setWindowTitle("Setup")
         self.setModal(True)
+        self.log = get_logger(__name__)
+        self.cfg = cfg
 
-        self._result_data: dict | None = None
-        self.initial_urls = initial_urls or []
-        self.initial_local_cmd = initial_local_cmd or ""
+        self._rows: List[Dict[str, Any]] = []       # pro Fenster die Widgets
+        self._result: Optional[Dict[str, Any]] = None
 
-        self._build_ui()
-        self._rebuild_rows()
-
-    # ---------- UI ----------
-    def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(12, 12, 12, 12)
-        root.setSpacing(10)
 
-        # Kopf: Anzahl und Orientierung
-        head = QHBoxLayout()
-        head.addWidget(QLabel("Anzahl Fenster:", self))
-        self.cb_count = QComboBox(self)
-        for n in self.COUNT_CHOICES:
-            self.cb_count.addItem(str(n), n)
-        self.cb_count.currentIndexChanged.connect(self._rebuild_rows)
-        head.addWidget(self.cb_count)
+        # Abschnitt Fenster Anzahl
+        top_box = QGroupBox("Fenster")
+        top_lay = QHBoxLayout(top_box)
+        top_lay.addWidget(QLabel("Anzahl"))
+        self.count_combo = QComboBox(self)
+        for n in (2, 4, 6, 8, 10):
+            self.count_combo.addItem(str(n), n)
+        # Vorbelegung aus cfg
+        preset = max(2, len(cfg.sources)) if cfg.sources else 2
+        if preset not in (2, 4, 6, 8, 10):
+            preset = 2
+        self.count_combo.setCurrentIndex((preset // 2) - 1)  # 2->0 4->1
+        self.count_combo.currentIndexChanged.connect(self._rebuild_rows)
+        top_lay.addWidget(self.count_combo)
+        top_lay.addStretch(1)
+        root.addWidget(top_box)
 
-        head.addSpacing(20)
-        head.addWidget(QLabel("Navigation:", self))
-        self.cb_orient = QComboBox(self)
-        self.cb_orient.addItems(["left", "top"])
-        head.addWidget(self.cb_orient)
-        head.addStretch(1)
-        root.addLayout(head)
+        # Grid fuer die Fenstertabellen
+        self.rows_box = QGroupBox("Quellen konfigurieren")
+        self.rows_grid = QGridLayout(self.rows_box)
+        self.rows_grid.setColumnStretch(5, 1)
+        root.addWidget(self.rows_box, 1)
 
-        # Scrollbarer Bereich fuer Fensterzeilen
-        self.scroll = QScrollArea(self)
-        self.scroll.setWidgetResizable(True)
-        self.rows_wrap = QWidget(self.scroll)
-        self.rows_layout = QGridLayout(self.rows_wrap)
-        self.rows_layout.setContentsMargins(8, 8, 8, 8)
-        self.rows_layout.setHorizontalSpacing(8)
-        self.rows_layout.setVerticalSpacing(6)
-        self.scroll.setWidget(self.rows_wrap)
-        root.addWidget(self.scroll, 1)
+        # UI Einstellungen
+        ui_box = QGroupBox("UI Einstellungen")
+        ui_lay = QGridLayout(ui_box)
 
-        # Optionen
-        opt_row = QHBoxLayout()
-        self.cb_save = QCheckBox("Beim Bestaetigen in config.json speichern", self)
-        opt_row.addWidget(self.cb_save)
-        opt_row.addStretch(1)
-        root.addLayout(opt_row)
+        ui_lay.addWidget(QLabel("Ausrichtung"), 0, 0)
+        self.nav_combo = QComboBox(self)
+        self.nav_combo.addItems(["left", "top"])
+        self.nav_combo.setCurrentText(self.cfg.ui.nav_orientation or "left")
+        ui_lay.addWidget(self.nav_combo, 0, 1)
+
+        ui_lay.addWidget(QLabel("Sidebar Breite"), 0, 2)
+        self.sidebar_spin = QSpinBox(self)
+        self.sidebar_spin.setRange(48, 400)
+        self.sidebar_spin.setValue(int(self.cfg.ui.sidebar_width or 96))
+        ui_lay.addWidget(self.sidebar_spin, 0, 3)
+
+        self.hamburger_cb = QCheckBox("Burger Menue erlauben", self)
+        self.hamburger_cb.setChecked(bool(self.cfg.ui.enable_hamburger))
+        ui_lay.addWidget(self.hamburger_cb, 1, 0, 1, 2)
+
+        ui_lay.addWidget(QLabel("Theme"), 1, 2)
+        self.theme_combo = QComboBox(self)
+        self.theme_combo.addItems(["light", "dark"])
+        self.theme_combo.setCurrentText(self.cfg.ui.theme or "light")
+        ui_lay.addWidget(self.theme_combo, 1, 3)
+
+        ui_lay.addWidget(QLabel("Startmodus"), 2, 0)
+        self.startmode_combo = QComboBox(self)
+        self.startmode_combo.addItems(["single", "quad"])
+        self.startmode_combo.setCurrentText(self.cfg.ui.start_mode or "quad")
+        ui_lay.addWidget(self.startmode_combo, 2, 1)
+
+        root.addWidget(ui_box)
 
         # Buttons
         btns = QHBoxLayout()
         btns.addStretch(1)
-        b_cancel = QPushButton("Abbrechen", self)
-        b_ok = QPushButton("Bestaetigen", self)
-        b_cancel.clicked.connect(self.reject)
-        b_ok.clicked.connect(self._on_accept)
-        btns.addWidget(b_cancel)
-        btns.addWidget(b_ok)
+        self.btn_cancel = QPushButton("Abbrechen", self)
+        self.btn_ok = QPushButton("Speichern", self)
+        self.btn_ok.setDefault(True)
+        btns.addWidget(self.btn_cancel)
+        btns.addWidget(self.btn_ok)
         root.addLayout(btns)
 
+        self.btn_cancel.clicked.connect(self.reject)
+        self.btn_ok.clicked.connect(self.accept)
+
+        # initiale Rows
+        self._rebuild_rows()
+
+        # falls cfg bereits Quellen hat, fuellen
+        if self.cfg.sources:
+            self._apply_from_cfg()
+
+    # ---------- Rows aufbauen ----------
     def _clear_rows(self):
-        while self.rows_layout.count():
-            item = self.rows_layout.takeAt(0)
+        # Widgets aus dem Grid entfernen
+        for i in reversed(range(self.rows_grid.count())):
+            item = self.rows_grid.itemAt(i)
             w = item.widget()
-            if w:
-                w.deleteLater()
+            if w is not None:
+                w.setParent(None)
+        self._rows.clear()
 
     def _rebuild_rows(self):
         self._clear_rows()
-        count = self.cb_count.currentData(Qt.UserRole)
-        if count is None:
-            count = int(self.cb_count.currentText())
 
-        headers = ["#", "Typ", "Name", "URL", "Exe", "Titel Regex", ""]
+        count = int(self.count_combo.currentData())
+        # Header
+        headers = ["Typ", "Name", "URL", "Pfad", "", "Muster Titel", "Muster Klasse", "nur Muster"]
         for c, h in enumerate(headers):
-            lab = QLabel(f"<b>{h}</b>", self.rows_wrap)
-            self.rows_layout.addWidget(lab, 0, c)
+            lbl = QLabel(f"<b>{h}</b>", self)
+            self.rows_grid.addWidget(lbl, 0, c)
 
-        self.row_widgets: List[Dict[str, Any]] = []
-
-        for i in range(count):
-            row = {}
-            r = i + 1  # Zeilenindex 1-basiert wegen Header
-
-            # Index
-            idx_lab = QLabel(str(i + 1), self.rows_wrap)
-            self.rows_layout.addWidget(idx_lab, r, 0)
+        for r in range(1, count + 1):
+            row: Dict[str, Any] = {}
 
             # Typ
-            cb_type = QComboBox(self.rows_wrap)
-            cb_type.addItems(["browser", "local"])
-            self.rows_layout.addWidget(cb_type, r, 1)
-            row["type"] = cb_type
+            type_combo = QComboBox(self)
+            type_combo.addItems(["browser", "local"])
+            self.rows_grid.addWidget(type_combo, r, 0)
+            row["type"] = type_combo
 
             # Name
-            name_edit = QLineEdit(self.rows_wrap)
-            # Default Name
-            default_name = f"Browser {i+1}" if i < len(self.initial_urls) else "Lokal" if i == len(self.initial_urls) else f"Quelle {i+1}"
-            name_edit.setText(default_name)
-            self.rows_layout.addWidget(name_edit, r, 2)
+            name_edit = QLineEdit(self)
+            name_edit.setPlaceholderText(f"Quelle {r}")
+            self.rows_grid.addWidget(name_edit, r, 1)
             row["name"] = name_edit
 
             # URL
-            url_edit = QLineEdit(self.rows_wrap)
-            if i < len(self.initial_urls):
-                url_edit.setText(self.initial_urls[i])
-            self.rows_layout.addWidget(url_edit, r, 3)
+            url_edit = QLineEdit(self)
+            url_edit.setPlaceholderText("https://...")
+            self.rows_grid.addWidget(url_edit, r, 2)
             row["url"] = url_edit
 
-            # Exe + Browse
-            exe_wrap = QHBoxLayout()
-            exe_edit = QLineEdit(self.initial_local_cmd, self.rows_wrap)
-            exe_btn = QPushButton("...", self.rows_wrap)
-            exe_btn.setFixedWidth(32)
-            def _mk_browse(target_edit=exe_edit):
-                def _browse():
-                    path, _ = QFileDialog.getOpenFileName(
-                        self, "Programm waehlen",
-                        os.environ.get("ProgramFiles", "C:\\"),
-                        "Programme (*.exe);;Alle Dateien (*.*)"
-                    )
-                    if path:
-                        target_edit.setText(path)
-                return _browse
-            exe_btn.clicked.connect(_mk_browse(exe_edit))
-            exe_w = QWidget(self.rows_wrap)
-            hl = QHBoxLayout(exe_w)
-            hl.setContentsMargins(0,0,0,0)
-            hl.setSpacing(4)
-            hl.addWidget(exe_edit, 1)
-            hl.addWidget(exe_btn)
-            self.rows_layout.addWidget(exe_w, r, 4)
-            row["exe"] = exe_edit
+            # Pfad und Browse
+            path_edit = QLineEdit(self)
+            path_edit.setPlaceholderText(r"C:\Pfad\zur\App.exe")
+            browse = QPushButton("Waehlen", self)
 
-            # Titel Regex
-            title_edit = QLineEdit(self.rows_wrap)
-            self.rows_layout.addWidget(title_edit, r, 5)
+            def _mk_browse(pe: QLineEdit):
+                def _do():
+                    file, _ = QFileDialog.getOpenFileName(self, "Programm auswaehlen", "", "Programme (*.exe);;Alle Dateien (*)")
+                    if file:
+                        pe.setText(file)
+                return _do
+
+            browse.clicked.connect(_mk_browse(path_edit))
+            self.rows_grid.addWidget(path_edit, r, 3)
+            self.rows_grid.addWidget(browse, r, 4)
+            row["path"] = path_edit
+            row["browse"] = browse
+
+            # Patterns
+            title_edit = QLineEdit(self)
+            title_edit.setPlaceholderText("Regex fuer Fenstertitel")
+            class_edit = QLineEdit(self)
+            class_edit.setPlaceholderText("Regex fuer Fensterklasse zB XLMAIN")
+            self.rows_grid.addWidget(title_edit, r, 5)
+            self.rows_grid.addWidget(class_edit, r, 6)
             row["title"] = title_edit
+            row["class"] = class_edit
 
-            # Aktivierungslogik
-            def _apply_enable(_cb=cb_type, _url=url_edit, _exe=exe_edit, _title=title_edit):
-                t = _cb.currentText()
-                is_browser = t == "browser"
-                _url.setEnabled(is_browser)
-                _exe.setEnabled(not is_browser)
-                _title.setEnabled(not is_browser)
-            cb_type.currentIndexChanged.connect(lambda _=None, f=_apply_enable: f())
-            _apply_enable()
+            force_cb = QCheckBox("", self)
+            self.rows_grid.addWidget(force_cb, r, 7, alignment=Qt.AlignCenter)
+            row["force"] = force_cb
 
-            self.row_widgets.append(row)
+            # Sichtbarkeit initial nach Typ
+            def _on_type_change(idx: int, rr=row):
+                t = rr["type"].currentText()
+                browser = (t == "browser")
+                rr["url"].setEnabled(browser)
+                rr["path"].setEnabled(not browser)
+                rr["browse"].setEnabled(not browser)
+            type_combo.currentIndexChanged.connect(_on_type_change)
+            _on_type_change(type_combo.currentIndex())
 
-        # Stretch in letzter Spalte
-        self.rows_layout.setColumnStretch(2, 1)
-        self.rows_layout.setColumnStretch(3, 2)
-        self.rows_layout.setColumnStretch(4, 2)
-        self.rows_layout.setColumnStretch(5, 2)
+            self._rows.append(row)
 
-    # ---------- Sammeln und Validieren ----------
-    def _collect(self) -> dict:
-        sources = []
-        for row in self.row_widgets:
-            typ = row["type"].currentText()
-            name = row["name"].text().strip() or "Quelle"
-            if typ == "browser":
-                url = row["url"].text().strip()
-                sources.append({
-                    "type": "browser",
-                    "name": name,
-                    "url": url
-                })
+    def _apply_from_cfg(self):
+        # Fuellt vorhandene Quellen in die Row Widgets
+        items = self.cfg.sources[:len(self._rows)]
+        for i, spec in enumerate(items):
+            r = self._rows[i]
+            r["type"].setCurrentText(spec.type or "browser")
+            r["name"].setText(spec.name or f"Quelle {i+1}")
+            if spec.type == "browser":
+                r["url"].setText(spec.url or "")
             else:
-                exe = row["exe"].text().strip()
-                title = row["title"].text().strip()
-                # fallback regex aus exe name
-                if not title and exe:
-                    base = os.path.splitext(os.path.basename(exe))[0]
-                    title = f".*{re.escape(base)}.*"
-                sources.append({
-                    "type": "local",
-                    "name": name,
-                    "launch_cmd": exe,
-                    "window_title_pattern": title
-                })
-        return {
-            "sources": sources,
-            "orientation": self.cb_orient.currentText(),
-            "save_to_file": self.cb_save.isChecked(),
-        }
+                r["path"].setText(spec.launch_cmd or "")
+            if getattr(spec, "window_title_pattern", ""):
+                r["title"].setText(spec.window_title_pattern)
+            if getattr(spec, "window_class_pattern", ""):
+                r["class"].setText(spec.window_class_pattern)
+            r["force"].setChecked(bool(getattr(spec, "force_pattern_only", False)))
 
-    def _on_accept(self):
-        # Validierung
-        rows = self._collect()["sources"]
-        if len(rows) < 2:
-            QMessageBox.warning(self, "Hinweis", "Bitte mindestens zwei Fenster konfigurieren.")
+    # ---------- Dialogsteuerung ----------
+    def accept(self) -> None:
+        # Werte einsammeln bevor das QDialog Objekt zerstoert wird
+        try:
+            sources: List[SourceSpec] = []
+            for r in self._rows:
+                typ = r["type"].currentText()
+                name = r["name"].text().strip() or "Quelle"
+                if typ == "browser":
+                    url = r["url"].text().strip()
+                    if not url:
+                        QMessageBox.warning(self, "Eingabe fehlt", f"Bitte URL fuer {name} angeben")
+                        return
+                    sources.append(SourceSpec(
+                        type="browser", name=name, url=url
+                    ))
+                else:
+                    path = r["path"].text().strip()
+                    if not path:
+                        QMessageBox.warning(self, "Eingabe fehlt", f"Bitte Pfad fuer {name} auswaehlen")
+                        return
+                    sources.append(SourceSpec(
+                        type="local",
+                        name=name,
+                        launch_cmd=path,
+                        embed_mode="native_window",
+                        window_title_pattern=r["title"].text().strip(),
+                        window_class_pattern=r["class"].text().strip(),
+                        force_pattern_only=bool(r["force"].isChecked()),
+                    ))
+
+            ui_block = {
+                "nav_orientation": self.nav_combo.currentText(),
+                "sidebar_width": int(self.sidebar_spin.value()),
+                "enable_hamburger": bool(self.hamburger_cb.isChecked()),
+                "theme": self.theme_combo.currentText(),
+                "start_mode": self.startmode_combo.currentText(),
+            }
+
+            self._result = {"sources": sources, "ui": ui_block}
+        except Exception as ex:
+            self.log.error("setup collect failed: %s", ex, extra={"source": "setup"})
+            QMessageBox.critical(self, "Fehler", f"Fehler beim Sammeln der Eingaben\n{ex}")
             return
+        super().accept()
 
-        # Alle Browser URLs pruefen
-        for s in rows:
-            if s["type"] == "browser":
-                u = s.get("url", "")
-                if not u or not u.startswith("http"):
-                    QMessageBox.warning(self, "Hinweis", "Bitte gueltige Browser Adressen (http oder https) eintragen.")
-                    return
-            else:
-                if not s.get("launch_cmd"):
-                    QMessageBox.warning(self, "Hinweis", "Bitte Exe fuer lokale Fenster auswaehlen.")
-                    return
-        self._result_data = {
-            **self._collect()
-        }
-        self.accept()
-
-    def results(self) -> dict:
-        return self._result_data if self._result_data is not None else self._collect()
+    def results(self) -> Dict[str, Any]:
+        # Sicherstellen, dass wir auch ohne accept() etwas liefern
+        return self._result or {"sources": [], "ui": {}}
