@@ -2,24 +2,47 @@
   "sources": [
     {
       "type": "browser",
-      "name": "Browser 1",
-      "url": "https://www.google.com"
+      "name": "Google",
+      "url": "https://www.google.com/",
+      "launch_cmd": null,
+      "embed_mode": "native_window",
+      "window_title_pattern": "",
+      "window_class_pattern": "",
+      "force_pattern_only": false,
+      "web_url": null
     },
     {
       "type": "browser",
-      "name": "Browser 2",
-      "url": "https://www.google.com"
+      "name": "Google 2",
+      "url": "https://www.google.com/",
+      "launch_cmd": null,
+      "embed_mode": "native_window",
+      "window_title_pattern": "",
+      "window_class_pattern": "",
+      "force_pattern_only": false,
+      "web_url": null
     },
     {
       "type": "browser",
-      "name": "Browser 3",
-      "url": "https://www.google.com"
+      "name": "Google 3",
+      "url": "https://www.google.com/",
+      "launch_cmd": null,
+      "embed_mode": "native_window",
+      "window_title_pattern": "",
+      "window_class_pattern": "",
+      "force_pattern_only": false,
+      "web_url": null
     },
     {
       "type": "local",
       "name": "Notepad",
-      "launch_cmd": "C:\\\\Windows\\\\System32\\\\notepad.exe",
-      "window_title_pattern": "(Unbenannt|Editor|Notepad)"
+      "url": null,
+      "launch_cmd": "C:/Windows/notepad.exe",
+      "embed_mode": "native_window",
+      "window_title_pattern": "",
+      "window_class_pattern": "",
+      "force_pattern_only": false,
+      "web_url": null
     }
   ],
   "ui": {
@@ -28,7 +51,7 @@
     "nav_orientation": "left",
     "show_setup_on_start": false,
     "enable_hamburger": true,
-    "placeholder_enabled": true,
+    "placeholder_enabled": false,
     "placeholder_gif_path": "",
     "theme": "light",
     "logo_path": ""
@@ -38,28 +61,23 @@
     "disable_system_keys": true,
     "kiosk_fullscreen": true
   },
-  "browser_urls": [
-    "https://www.google.com",
-    "https://www.google.com",
-    "https://www.google.com"
-  ],
-  "local_app": {
-    "launch_cmd": "C:\\\\Windows\\\\System32\\\\notepad.exe",
-    "embed_mode": "native_window",
-    "window_title_pattern": "(Unbenannt|Editor|Notepad)",
-    "web_url": null
-  },
   "logging": {
-  "level": "INFO",
-  "fmt": "plain",
-  "dir": null,
-  "filename": "kiosk.log",
-  "rotate_max_bytes": 5242880,
-  "rotate_backups": 5,
-  "console": true,
-  "qt_messages": true,
-  "mask_keys": ["password", "token", "authorization", "auth", "secret"],
-  "memory_buffer": 2000,
-  "enable_qt_bridge": true
+    "level": "INFO",
+    "fmt": "plain",
+    "dir": null,
+    "filename": "kiosk.log",
+    "rotate_max_bytes": 5242880,
+    "rotate_backups": 5,
+    "console": true,
+    "qt_messages": true,
+    "mask_keys": [
+      "password",
+      "token",
+      "authorization",
+      "auth",
+      "secret"
+    ],
+    "memory_buffer": 2000,
+    "enable_qt_bridge": true
   }
 }
