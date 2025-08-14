@@ -1,4 +1,3 @@
-# modules/ui/settings_dialog.py
 from __future__ import annotations
 from typing import Optional, Dict, Any, List
 
@@ -11,14 +10,16 @@ from PySide6.QtWidgets import (
 
 # Log Viewer und Log Pfad
 from modules.ui.log_viewer import LogViewer
-from modules.utils.logger import get_log_path
+from modules.utils.logger import get_log_path, get_logger
 
-# Fenster Spy
+# Fenster Spy optional importieren
 try:
-    from modules.ui.window_spy import WindowSpyDialog
+    from modules.ui.window_spy import WindowSpyDialog  # type: ignore
     _HAVE_SPY = True
 except Exception:
     _HAVE_SPY = False
+
+_log = get_logger(__name__)
 
 
 def _human_size(n: int) -> str:
@@ -224,7 +225,7 @@ class SettingsDialog(QDialog):
         footer = QHBoxLayout()
         self.btn_logs = QPushButton("Logs", self)
         self.btn_stats = QPushButton("Log Statistik", self)
-        self.btn_spy = QPushButton("Fenster Spy", self)  # neu: Fenster Spy
+        self.btn_spy = QPushButton("Fenster Spy", self)
         self.btn_quit = QPushButton("Beenden", self)
         self.btn_cancel = QPushButton("Abbrechen", self)
         self.btn_ok = QPushButton("Speichern", self)
@@ -286,32 +287,59 @@ class SettingsDialog(QDialog):
         dlg.show()
         self._child_windows.append(dlg)
 
+    # ===== Fenster Spy =====
     def _open_window_spy(self):
         if not _HAVE_SPY:
-            m = QMessageBox(self)
-            m.setWindowTitle("Nicht verfuegbar")
-            m.setText("Fenster Spy ist nicht verfuegbar")
-            m.setInformativeText("Das Modul window_spy konnte nicht geladen werden.")
-            m.setIcon(QMessageBox.Information)
-            m.exec()
+            QMessageBox.information(
+                self,
+                "Fenster Spy",
+                "Fenster Spy ist nicht verfuegbar.\nDas Modul window_spy konnte nicht geladen werden."
+            )
             return
+
+        # attach Callback akzeptiert beliebige Argumente, damit wir zu allen Spy Versionen kompatibel sind
+        def _on_spy_attach(*args, **kwargs):
+            _log.info("Spy Auswahl empfangen args=%s kwargs=%s", args, kwargs, extra={"source": "window_spy"})
+            # Nutzerverstaendliche Rueckmeldung
+            QMessageBox.information(self, "Fenster ausgewaehlt",
+                                    "Das Fenster wurde erkannt. Falls Einbettung vorgesehen ist, "
+                                    "uebernimmt die App dies automatisch.")
+        # Versuche die exakte Signatur aus deinem Screenshot: keyword only
         try:
-            # Kompatibel zu unterschiedlichen Signaturen
-            try:
-                dlg = WindowSpyDialog(title="Fenster Spy", allow_system_windows=False, parent=self)
-            except TypeError:
-                dlg = WindowSpyDialog(self)
+            dlg = WindowSpyDialog(title="Fenster Spy", pid_root=None, attach_callback=_on_spy_attach, parent=self)  # type: ignore
+        except TypeError as ex:
+            # Verstaendliche Meldung, plus technische Info klein
+            QMessageBox.warning(
+                self,
+                "Fenster Spy",
+                "Fenster Spy konnte nicht gestartet werden.\n"
+                "Diese Version benoetigt einen anderen Start.\n\n"
+                f"Technische Info: {ex}"
+            )
+            return
+        except Exception as ex:
+            QMessageBox.warning(
+                self,
+                "Fenster Spy",
+                "Fenster Spy konnte nicht gestartet werden.\n"
+                f"Technische Info: {ex}"
+            )
+            return
+
+        try:
+            if not dlg.windowTitle():
+                dlg.setWindowTitle("Fenster Spy")
             dlg.setModal(False)
             dlg.setAttribute(Qt.WA_DeleteOnClose, True)
             dlg.show()
             self._child_windows.append(dlg)
         except Exception as ex:
-            m = QMessageBox(self)
-            m.setWindowTitle("Fehler")
-            m.setText("Fenster Spy konnte nicht geoeffnet werden")
-            m.setInformativeText(str(ex))
-            m.setIcon(QMessageBox.Warning)
-            m.exec()
+            QMessageBox.warning(
+                self,
+                "Fenster Spy",
+                "Fenster Spy konnte nicht angezeigt werden.\n"
+                f"Technische Info: {ex}"
+            )
 
     def _request_quit(self):
         m = QMessageBox(self)

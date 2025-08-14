@@ -2,8 +2,6 @@
 from __future__ import annotations
 from typing import List, Dict, Any, Optional
 
-import os
-
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -11,11 +9,11 @@ from PySide6.QtWidgets import (
     QSpinBox, QGridLayout
 )
 
-from modules.utils.config_loader import Config, SourceSpec, UIConfig, KioskConfig
 
+# ---------- Hilfs Widgets ----------
 
 class _SourceRow(QWidget):
-    """Eine dynamische Zeile fuer eine Quelle."""
+    """Dynamische Zeile fuer eine Quelle."""
     def __init__(self, idx: int, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.idx = idx
@@ -54,19 +52,18 @@ class _SourceRow(QWidget):
         self.args_edit.setPlaceholderText("Optionale Argumente zB /safe oder -n 1")
 
         self.title_edit = QLineEdit(self)
-        self.title_edit.setPlaceholderText("Regex zB .*Notepad.*")
+        self.title_edit.setPlaceholderText("Titel Regex zB .*Notepad.*")
 
         self.class_edit = QLineEdit(self)
-        self.class_edit.setPlaceholderText("Regex zB XLMAIN")
+        self.class_edit.setPlaceholderText("Klasse Regex zB XLMAIN")
 
         self.child_class_edit = QLineEdit(self)
-        self.child_class_edit.setPlaceholderText("Regex fuer Child zB Edit")
+        self.child_class_edit.setPlaceholderText("Child Klasse Regex zB Edit")
 
         self.allow_global_cb = QCheckBox("Globalen Fallback erlauben", self)
-        self.follow_children_cb = QCheckBox("Kindprozesse folgen", self)
+        self.follow_children_cb = QCheckBox("Kindprozessen folgen", self)
         self.follow_children_cb.setChecked(True)
 
-        # Lokale App Zeilen platzieren
         row = 3
         grid.addWidget(QLabel("EXE"), row, 0)
         grid.addWidget(self.exe_edit, row, 1, 1, 2)
@@ -91,7 +88,6 @@ class _SourceRow(QWidget):
 
         grid.addWidget(self.follow_children_cb, row, 1)
         grid.addWidget(self.allow_global_cb, row, 2)
-        row += 1
 
         self._on_type_change(self.type_combo.currentText())
 
@@ -114,8 +110,8 @@ class _SourceRow(QWidget):
         if path:
             self.exe_edit.setText(path)
 
-    # ---- Daten extrahieren ----
     def to_spec_dict(self) -> Dict[str, Any] | None:
+        """Extrahiert die Zeile als SourceSpec dict oder None wenn unvollstaendig."""
         typ = self.type_combo.currentText().strip().lower()
         name = self.name_edit.text().strip() or f"Quelle {self.idx+1}"
 
@@ -129,7 +125,6 @@ class _SourceRow(QWidget):
                 "url": url
             }
 
-        # local
         exe = self.exe_edit.text().strip()
         if not exe:
             return None
@@ -153,19 +148,26 @@ class _SourceRow(QWidget):
         }
 
 
+# ---------- Setup Dialog ----------
+
 class SetupDialog(QDialog):
     """
-    Einfache Ersteinrichtung mit dynamischer Anzahl an Quellen.
-    results() liefert ein dict mit kompletter Config zurueck.
+    Ersteinrichtung mit dynamischer Anzahl Quellen.
+    results() gibt ein dict zurueck:
+      { "config": { .. komplette config .. }, "should_save": bool }
     """
-    def __init__(self, cfg: Config, parent: Optional[QWidget] = None):
+    def __init__(self, cfg, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.setWindowTitle("Ersteinrichtung")
         self.setModal(True)
-        self.setMinimumSize(720, 520)
+        self.setMinimumSize(760, 560)
 
         self._cfg = cfg
         self._rows: List[_SourceRow] = []
+
+        # Theme aus aktueller App Config uebernehmen
+        theme = self._extract_theme_from_cfg(cfg)
+        self.apply_theme(theme)
 
         # Header
         header = QWidget(self)
@@ -174,12 +176,17 @@ class SetupDialog(QDialog):
         hl.addWidget(QLabel("Anzahl Fenster"))
         self.count_spin = QSpinBox(self)
         self.count_spin.setRange(1, 20)
-        self.count_spin.setValue(max(1, len(cfg.sources) or 4))
+        initial_count = 4
+        try:
+            initial_count = max(1, len(getattr(cfg, "sources", []) or [])) or 4
+        except Exception:
+            initial_count = 4
+        self.count_spin.setValue(initial_count)
         self.count_spin.valueChanged.connect(self._rebuild_rows)
         hl.addWidget(self.count_spin)
         hl.addStretch(1)
 
-        # Scroll Bereich fuer Zeilen
+        # Scrollbereich
         scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)
         self.rows_host = QWidget(scroll)
@@ -216,24 +223,55 @@ class SetupDialog(QDialog):
         self.cancel_btn.clicked.connect(self.reject)
         self.save_btn.clicked.connect(self._on_save_clicked)
 
-        # Styling
-        self.setStyleSheet("""
-            QLabel { font-size: 14px; }
-            QLineEdit { padding: 6px 8px; border:1px solid rgba(128,128,128,0.35); border-radius: 8px; }
-            QPushButton { padding: 8px 12px; border:1px solid rgba(128,128,128,0.35); border-radius: 10px; }
-            QPushButton:hover { border-color: rgba(128,128,128,0.55); }
-            QCheckBox::indicator { width: 18px; height: 18px; border-radius: 4px; border:1px solid rgba(128,128,128,0.45); background: rgba(255,255,255,0.03); }
-            QCheckBox::indicator:checked { background:#0a84ff; border-color:#0a84ff; }
-        """)
-
-        # Reihen initial aufbauen
+        # Reihen aufbauen und vorbelegen
         self._rebuild_rows(self.count_spin.value())
-        # Vorbelegen aus vorhandener Config
         self._prefill_from_cfg(cfg)
 
         self._result: Dict[str, Any] = {}
 
-    # ------- Aufbau -------
+    # -------- Theme --------
+
+    def _extract_theme_from_cfg(self, cfg) -> str:
+        """Liest 'light' oder 'dark' robust aus cfg."""
+        # cfg kann ein Objekt oder dict sein
+        try:
+            ui = getattr(cfg, "ui", None)
+            if ui is not None:
+                val = getattr(ui, "theme", None)
+                if val:
+                    return str(val)
+        except Exception:
+            pass
+        try:
+            val = cfg.get("ui", {}).get("theme")
+            if val:
+                return str(val)
+        except Exception:
+            pass
+        return "light"
+
+    def apply_theme(self, theme: str):
+        """Einfaches hell/dunkel Styling, analog zur Hauptapp."""
+        if str(theme).lower() == "dark":
+            self.setStyleSheet("""
+                QWidget { background: #121212; color: #e0e0e0; }
+                QLineEdit, QComboBox { background: #1b1b1b; border: 1px solid #2a2a2a; padding: 6px 8px; border-radius: 8px; }
+                QCheckBox::indicator { width: 16px; height: 16px; border: 1px solid #5a5a5a; background: #2a2a2a; }
+                QCheckBox::indicator:checked { background: #3b82f6; border: 1px solid #3b82f6; }
+                QPushButton { background: #1f1f1f; border: 1px solid #2a2a2a; padding: 8px 12px; border-radius: 10px; }
+                QPushButton:hover { border-color: #3a3a3a; }
+            """)
+        else:
+            self.setStyleSheet("""
+                QWidget { background: #f4f4f4; color: #202020; }
+                QLineEdit, QComboBox { background: #ffffff; border: 1px solid #d0d0d0; padding: 6px 8px; border-radius: 8px; }
+                QCheckBox::indicator { width: 16px; height: 16px; border: 1px solid #999; background: #fff; }
+                QCheckBox::indicator:checked { background: #0078d4; border: 1px solid #0078d4; }
+                QPushButton { background: #ffffff; border: 1px solid #d0d0d0; padding: 8px 12px; border-radius: 10px; }
+                QPushButton:hover { border-color: #bcbcbc; }
+            """)
+
+    # -------- Layout Zeilen --------
 
     def _clear_rows(self):
         for r in self._rows:
@@ -249,9 +287,17 @@ class SetupDialog(QDialog):
             self.rows_layout.addWidget(row)
         self.rows_layout.addStretch(1)
 
-    def _prefill_from_cfg(self, cfg: Config):
-        if not cfg.sources:
-            # Beispiel fuellen
+    def _prefill_from_cfg(self, cfg):
+        sources = getattr(cfg, "sources", []) or []
+        try:
+            # falls dict
+            if not sources and isinstance(cfg, dict):
+                sources = cfg.get("sources", []) or []
+        except Exception:
+            pass
+
+        if not sources:
+            # Defaults fuellen
             if self._rows:
                 # erste drei Browser
                 for i in range(min(3, len(self._rows))):
@@ -268,25 +314,32 @@ class SetupDialog(QDialog):
                     r.child_class_edit.setText("Edit")
             return
 
-        m = min(len(cfg.sources), len(self._rows))
+        m = min(len(sources), len(self._rows))
         for i in range(m):
-            s = cfg.sources[i]
-            r = self._rows[i]
-            r.name_edit.setText(s.name or f"Quelle {i+1}")
-            if s.type == "browser":
-                r.type_combo.setCurrentText("browser")
-                r.url_edit.setText(s.url or "")
-            else:
-                r.type_combo.setCurrentText("local")
-                r.exe_edit.setText(s.launch_cmd or "")
-                r.args_edit.setText(s.args or "")
-                r.title_edit.setText(s.window_title_pattern or "")
-                r.class_edit.setText(s.window_class_pattern or "")
-                r.child_class_edit.setText(s.child_window_class_pattern or "")
-                r.allow_global_cb.setChecked(bool(s.allow_global_fallback))
-                r.follow_children_cb.setChecked(bool(s.follow_children))
+            try:
+                s = sources[i]
+                # s kann ein Objekt oder Dict sein
+                s_type = getattr(s, "type", None) or s.get("type", "browser")
+                s_name = getattr(s, "name", None) or s.get("name", f"Quelle {i+1}")
+                r = self._rows[i]
+                r.name_edit.setText(s_name)
+                if s_type == "browser":
+                    r.type_combo.setCurrentText("browser")
+                    url = getattr(s, "url", None) or s.get("url", "")
+                    r.url_edit.setText(url)
+                else:
+                    r.type_combo.setCurrentText("local")
+                    r.exe_edit.setText(getattr(s, "launch_cmd", None) or s.get("launch_cmd", ""))
+                    r.args_edit.setText(getattr(s, "args", None) or s.get("args", ""))
+                    r.title_edit.setText(getattr(s, "window_title_pattern", None) or s.get("window_title_pattern", "") or "")
+                    r.class_edit.setText(getattr(s, "window_class_pattern", None) or s.get("window_class_pattern", "") or "")
+                    r.child_class_edit.setText(getattr(s, "child_window_class_pattern", None) or s.get("child_window_class_pattern", "") or "")
+                    r.allow_global_cb.setChecked(bool(getattr(s, "allow_global_fallback", None) or s.get("allow_global_fallback", False)))
+                    r.follow_children_cb.setChecked(bool(getattr(s, "follow_children", None) or s.get("follow_children", True)))
+            except Exception:
+                continue
 
-    # ------- Speichern -------
+    # -------- Speichern --------
 
     def _on_save_clicked(self):
         specs: List[Dict[str, Any]] = []
@@ -299,24 +352,36 @@ class SetupDialog(QDialog):
             QMessageBox.warning(self, "Ungueltig", "Bitte mindestens eine gueltige Quelle angeben.")
             return
 
-        # Minimale neue Config bauen, bestehende UI und Kiosk uebernehmen
+        # Aktuelle UI und Kiosk Werte aus cfg lesen, robust gegen Dict oder Objekt
+        ui = getattr(self._cfg, "ui", None) or {}
+        kiosk = getattr(self._cfg, "kiosk", None) or {}
+
+        def _get(section, key, default):
+            try:
+                return getattr(section, key)
+            except Exception:
+                try:
+                    return section.get(key, default)
+                except Exception:
+                    return default
+
         new_cfg: Dict[str, Any] = {
             "sources": specs,
             "ui": {
-                "start_mode": self._cfg.ui.start_mode,
-                "sidebar_width": self._cfg.ui.sidebar_width,
-                "nav_orientation": self._cfg.ui.nav_orientation,
+                "start_mode": _get(ui, "start_mode", "quad"),
+                "sidebar_width": _get(ui, "sidebar_width", 96),
+                "nav_orientation": _get(ui, "nav_orientation", "left"),
                 "show_setup_on_start": False,
-                "enable_hamburger": self._cfg.ui.enable_hamburger,
-                "placeholder_enabled": self._cfg.ui.placeholder_enabled,
-                "placeholder_gif_path": self._cfg.ui.placeholder_gif_path,
-                "theme": self._cfg.ui.theme,
-                "logo_path": self._cfg.ui.logo_path,
+                "enable_hamburger": _get(ui, "enable_hamburger", True),
+                "placeholder_enabled": _get(ui, "placeholder_enabled", True),
+                "placeholder_gif_path": _get(ui, "placeholder_gif_path", ""),
+                "theme": _get(ui, "theme", "light"),
+                "logo_path": _get(ui, "logo_path", "")
             },
             "kiosk": {
-                "monitor_index": self._cfg.kiosk.monitor_index,
-                "disable_system_keys": self._cfg.kiosk.disable_system_keys,
-                "kiosk_fullscreen": self._cfg.kiosk.kiosk_fullscreen,
+                "monitor_index": _get(kiosk, "monitor_index", 0),
+                "disable_system_keys": _get(kiosk, "disable_system_keys", True),
+                "kiosk_fullscreen": _get(kiosk, "kiosk_fullscreen", True)
             }
         }
 
@@ -327,27 +392,5 @@ class SetupDialog(QDialog):
         self.accept()
 
     def results(self) -> Dict[str, Any]:
-        # Rueckgabe immer ein dict:
-        # { "config": {...}, "should_save": True|False }
-        return self._result or {
-            "config": {
-                "sources": [],
-                "ui": {
-                    "start_mode": self._cfg.ui.start_mode,
-                    "sidebar_width": self._cfg.ui.sidebar_width,
-                    "nav_orientation": self._cfg.ui.nav_orientation,
-                    "show_setup_on_start": False,
-                    "enable_hamburger": self._cfg.ui.enable_hamburger,
-                    "placeholder_enabled": self._cfg.ui.placeholder_enabled,
-                    "placeholder_gif_path": self._cfg.ui.placeholder_gif_path,
-                    "theme": self._cfg.ui.theme,
-                    "logo_path": self._cfg.ui.logo_path,
-                },
-                "kiosk": {
-                    "monitor_index": self._cfg.kiosk.monitor_index,
-                    "disable_system_keys": self._cfg.kiosk.disable_system_keys,
-                    "kiosk_fullscreen": self._cfg.kiosk.kiosk_fullscreen,
-                }
-            },
-            "should_save": False
-        }
+        # Rueckgabeformat immer gleich
+        return self._result or {"config": {"sources": []}, "should_save": False}
