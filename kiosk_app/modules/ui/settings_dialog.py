@@ -111,7 +111,7 @@ class SettingsDialog(QDialog):
 
         # Placeholder
         row4 = QHBoxLayout()
-        self.placeholder_cb = QCheckBox("Placeholder aktiv", self)
+        self.placeholder_cb = QCheckBox("Platzhalter aktiv", self)
         self.placeholder_cb.setChecked(bool(placeholder_enabled))
         row4.addWidget(self.placeholder_cb)
 
@@ -144,11 +144,13 @@ class SettingsDialog(QDialog):
         footer = QHBoxLayout()
         self.btn_logs = QPushButton("Logs", self)
         self.btn_stats = QPushButton("Log Statistik", self)
+        self.btn_spy = QPushButton("Fenster Spy", self)  # neu
         self.btn_quit = QPushButton("Beenden", self)
         self.btn_cancel = QPushButton("Abbrechen", self)
         self.btn_ok = QPushButton("Speichern", self)
         footer.addWidget(self.btn_logs)
         footer.addWidget(self.btn_stats)
+        footer.addWidget(self.btn_spy)  # neu
         footer.addStretch(1)
         footer.addWidget(self.btn_quit)
         footer.addWidget(self.btn_cancel)
@@ -165,9 +167,11 @@ class SettingsDialog(QDialog):
         # Events
         self.btn_cancel.clicked.connect(self.reject)
         self.btn_ok.clicked.connect(self._accept_save)
-        # Neu: Logs und Statistik oeffnen, ohne den Dialog zu schliessen
+        # Logs und Statistik oeffnen, ohne den Dialog zu schliessen
         self.btn_logs.clicked.connect(self._open_logs_window)
         self.btn_stats.clicked.connect(self._open_stats_window)
+        # Fenster Spy nur ueber Einstellungen
+        self.btn_spy.clicked.connect(self._open_window_spy)
         self.btn_quit.clicked.connect(self._request_quit)
 
         # Styling
@@ -232,6 +236,29 @@ class SettingsDialog(QDialog):
         dlg.setAttribute(Qt.WA_DeleteOnClose, True)
         dlg.show()
         self._child_windows.append(dlg)
+
+    def _open_window_spy(self):
+        """
+        Fenster Spy nur ueber Einstellungen: wir rufen die MainWindow Methode auf,
+        damit der aktive Slot und die Attach Logik zentral bleiben.
+        """
+        p = self.parent()
+        if p is not None:
+            # bevorzugt _open_window_spy auf MainWindow
+            if hasattr(p, "_open_window_spy") and callable(getattr(p, "_open_window_spy")):
+                try:
+                    p._open_window_spy()
+                    return
+                except Exception:
+                    pass
+            # Fallback: open_window_spy falls anders benannt
+            if hasattr(p, "open_window_spy") and callable(getattr(p, "open_window_spy")):
+                try:
+                    p.open_window_spy()
+                    return
+                except Exception:
+                    pass
+        # wenn kein Parent oder Methode fehlt, tun wir nichts. Der Dialog bleibt offen.
 
     def _request_quit(self):
         self._result = {

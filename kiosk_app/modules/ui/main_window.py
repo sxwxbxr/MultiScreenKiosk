@@ -17,6 +17,8 @@ from modules.services.browser_services import BrowserService, make_webview
 from modules.services.local_app_service import LocalAppWidget
 from modules.utils.config_loader import Config, SourceSpec, save_config
 from modules.utils.logger import get_logger, get_log_path
+from modules.ui.window_spy import WindowSpyDialog
+from modules.services.local_app_service import LocalAppWidget
 
 
 def _clear_layout(layout):
@@ -187,6 +189,7 @@ class MainWindow(QMainWindow):
         pos = self.overlay_burger.mapToGlobal(self.overlay_burger.rect().bottomLeft())
         m.exec(pos)
 
+
     # ---------- Erstellung der Quellenwidgets ----------
     def _create_source_widgets(self):
         self.source_widgets.clear()
@@ -288,13 +291,19 @@ class MainWindow(QMainWindow):
             logo_path=self.cfg.ui.logo_path,
             parent=self
         )
+
+        # WICHTIG: keine dlg.request_* Verbindungen mehr, der Dialog oeffnet
+        # Logs, Statistik und Fenster Spy selbst und bleibt dabei offen.
+
         if dlg.exec():
             res = dlg.results()
 
+            # Beenden gewuenscht
             if res.get("quit_requested"):
                 self._confirm_and_quit()
                 return
 
+            # Werte uebernehmen
             self.cfg.ui.theme = res["theme"]
             self.cfg.ui.nav_orientation = res["nav_orientation"]
             self.cfg.ui.enable_hamburger = res["enable_hamburger"]
@@ -302,11 +311,13 @@ class MainWindow(QMainWindow):
             self.cfg.ui.placeholder_gif_path = res["placeholder_gif_path"]
             self.cfg.ui.logo_path = res["logo_path"]
 
+            # Anwenden
             self.apply_theme(self.cfg.ui.theme)
             self._build_root_and_sidebar()
             if not self.cfg.ui.enable_hamburger:
                 self.set_sidebar_collapsed(False)
 
+            # Placeholder Logik fuer Browser Hosts aktualisieren
             for w in self.source_widgets:
                 if isinstance(w, BrowserHostWidget):
                     w.set_placeholder_enabled(self.cfg.ui.placeholder_enabled)
@@ -314,13 +325,18 @@ class MainWindow(QMainWindow):
                     if not self.cfg.ui.placeholder_enabled:
                         w.show_view()
 
+            # Titel aktualisieren
             self.sidebar.set_titles([s.name for s in self.sources])
             self.sidebar.set_active_global_index(self.state.active_index)
 
+            # Config speichern
             try:
-                save_config(self.cfg)  # Standardpfad modules/config.json
+                from modules.utils.config_loader import save_config
+                save_config(self.cfg)
             except Exception:
                 pass
+
+
 
     def open_log_viewer(self):
         dlg = LogViewer(self)
@@ -534,3 +550,27 @@ class MainWindow(QMainWindow):
                 except Exception:
                     pass
         super().closeEvent(ev)
+
+    def _open_window_spy(self):
+        idx = self.state.active_index
+        if not (0 <= idx < len(self.source_widgets)):
+            QMessageBox.information(self, "Fenster Spy", "Kein aktives Widget.")
+            return
+        w = self.source_widgets[idx]
+        if not isinstance(w, LocalAppWidget):
+            QMessageBox.information(self, "Fenster Spy", "Der aktive Slot ist keine lokale Anwendung.")
+            return
+
+        dlg = WindowSpyDialog(
+            title="Fenster Spy",
+            pid_root=w._pid,
+            attach_callback=w.force_attach,
+            parent=self
+        )
+        dlg.setAttribute(Qt.WA_DeleteOnClose, True)
+        dlg.setModal(False)
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+
+
