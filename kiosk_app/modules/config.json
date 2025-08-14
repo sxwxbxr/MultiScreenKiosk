@@ -25,7 +25,7 @@
       "window_class_pattern": null,
       "child_window_class_pattern": null,
       "follow_children": true,
-      "allow_global_fallback": false
+      "allow_global_fallback": true
     }
   ],
   "ui": {

@@ -14,7 +14,7 @@ from modules.utils.logger import init_logging, get_logger
 from modules.ui.app_state import AppState
 from modules.ui.main_window import MainWindow
 from modules.ui.setup_dialog import SetupDialog
-from modules.utils.config_loader import Config, SourceSpec, UIConfig, KioskConfig
+from modules.utils.config_loader import Config
 
 def _dict_to_config(d: Dict[str, Any]) -> Config:
     # Hilfsparser fuer das In Memory Ergebnis
