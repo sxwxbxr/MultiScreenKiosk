@@ -33,6 +33,7 @@ class SourceSpec:
     embed_mode: str = "native_window"
     window_title_pattern: Optional[str] = None
     window_class_pattern: Optional[str] = None
+    force_pattern_only: bool = False
     web_url: Optional[str] = None
 
 
@@ -74,6 +75,7 @@ def _source_from_dict(d: Dict[str, Any]) -> SourceSpec:
         embed_mode=d.get("embed_mode", "native_window"),
         window_title_pattern=d.get("window_title_pattern"),
         window_class_pattern=d.get("window_class_pattern"),
+        force_pattern_only=d.get("force_pattern_only", False),
         web_url=d.get("web_url"),
     )
 

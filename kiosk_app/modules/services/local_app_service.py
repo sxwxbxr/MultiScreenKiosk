@@ -337,7 +337,14 @@ class LocalAppWidget(QWidget):
                 self.log.error("kein launch_cmd konfiguriert")
             else:
                 try:
+                    # Besser ohne Shell starten, damit die PID dem Zielprozess entspricht
+                    parts = shlex.split(cmd, posix=False)
+                    self.proc = subprocess.Popen(parts)
+                except Exception:
+                    # Fallback: Shell benutzen, falls die Aufteilung fehlschlaegt
                     self.proc = subprocess.Popen(cmd, shell=True)
+
+                try:
                     self.log.info("Prozess gestartet: %s", cmd)
                     if not self._expected_exe_upper:
                         self._expected_exe_upper = _expected_exe_from_cmd(cmd, self._class_re)

@@ -213,7 +213,9 @@ class MainWindow(QMainWindow):
                     "launch_cmd": s.launch_cmd,
                     "embed_mode": "native_window",
                     "window_title_pattern": s.window_title_pattern or ".*",
-                    "web_url": None
+                    "window_class_pattern": s.window_class_pattern or "",
+                    "web_url": None,
+                    "force_pattern_only": getattr(s, "force_pattern_only", False)
                 })())
                 self.source_widgets.append(w)
                 self.browser_services.append(None)
