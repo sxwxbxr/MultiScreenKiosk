@@ -34,6 +34,7 @@ class SourceSpec:
     window_title_pattern: Optional[str] = None
     window_class_pattern: Optional[str] = None
     web_url: Optional[str] = None
+    force_pattern_only: bool = False
 
 
 @dataclass
@@ -75,6 +76,7 @@ def _source_from_dict(d: Dict[str, Any]) -> SourceSpec:
         window_title_pattern=d.get("window_title_pattern"),
         window_class_pattern=d.get("window_class_pattern"),
         web_url=d.get("web_url"),
+        force_pattern_only=bool(d.get("force_pattern_only", False)),
     )
 
 

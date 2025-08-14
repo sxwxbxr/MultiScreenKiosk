@@ -209,12 +209,8 @@ class MainWindow(QMainWindow):
                 svc.page_error.connect(lambda _msg, h=host: h.show_placeholder())
                 self.browser_services.append(svc)
             else:
-                w = LocalAppWidget(type("Tmp", (), {
-                    "launch_cmd": s.launch_cmd,
-                    "embed_mode": "native_window",
-                    "window_title_pattern": s.window_title_pattern or ".*",
-                    "web_url": None
-                })())
+                # Uebrige Quellen werden als lokale Anwendungen behandelt
+                w = LocalAppWidget(s)
                 self.source_widgets.append(w)
                 self.browser_services.append(None)
 
