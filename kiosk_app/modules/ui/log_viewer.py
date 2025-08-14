@@ -1,117 +1,237 @@
 # modules/ui/log_viewer.py
 from __future__ import annotations
+from typing import Optional, List
+
 import os
+import re
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QPlainTextEdit,
-    QLineEdit, QLabel, QFileDialog, QMessageBox
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QLineEdit,
+    QCheckBox, QPushButton, QTextEdit, QFileDialog, QMessageBox
 )
 
-from modules.utils.logger import read_recent_logs, get_log_bridge, get_log_path
+from modules.utils.logger import get_log_path, get_log_bridge
+
+_LEVELS = ["ALLE", "DEBUG", "INFO", "WARNING", "ERROR"]
+
 
 class LogViewer(QDialog):
+    """Einfacher Log Viewer mit Filtern und Live Update."""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Logs")
-        self.setMinimumSize(900, 600)
+        self.setModal(False)
+        self.setMinimumSize(800, 480)
 
-        self.text = QPlainTextEdit(self)
-        self.text.setReadOnly(True)
-        self.filter_edit = QLineEdit(self)
-        self.filter_edit.setPlaceholderText("Filter eingeben")
-        self.status = QLabel(self)
+        self._path = get_log_path()
+        self._buffer: List[str] = []   # Rohzeilen fuer Refilter
+        self._file_pos = 0
+        self._paused = False
 
+        # Kopfzeile mit Filtern
         top = QHBoxLayout()
-        top.addWidget(QLabel("Filter:"))
-        top.addWidget(self.filter_edit)
+        top.addWidget(QLabel("Level"))
+        self.level_combo = QComboBox(self)
+        self.level_combo.addItems(_LEVELS)
+        self.level_combo.setCurrentIndex(0)
 
-        btns = QHBoxLayout()
-        self.btn_pause = QPushButton("Pause", self)
-        self.btn_clear = QPushButton("Leeren", self)
-        self.btn_open = QPushButton("Ordner oeffnen", self)
-        self.btn_copy = QPushButton("Pfad kopieren", self)
-        self.btn_close = QPushButton("Schliessen", self)
-        btns.addWidget(self.btn_pause)
-        btns.addWidget(self.btn_clear)
-        btns.addWidget(self.btn_open)
-        btns.addWidget(self.btn_copy)
-        btns.addStretch(1)
-        btns.addWidget(self.btn_close)
+        self.search_edit = QLineEdit(self)
+        self.search_edit.setPlaceholderText("Filter Text")
+
+        self.regex_cb = QCheckBox("Regex", self)
+        self.case_cb = QCheckBox("Gross Kleinschreibung", self)
+
+        self.auto_cb = QCheckBox("Auto Scroll", self)
+        self.auto_cb.setChecked(True)
+
+        self.pause_cb = QCheckBox("Pause", self)
+
+        self.btn_refresh = QPushButton("Neu laden", self)
+        self.btn_clear = QPushButton("Datei leeren", self)
+        self.btn_open = QPushButton("Datei oeffnen", self)
+
+        for w in [self.level_combo, self.search_edit, self.regex_cb, self.case_cb, self.auto_cb, self.pause_cb]:
+            top.addWidget(w)
+        top.addStretch(1)
+        top.addWidget(self.btn_refresh)
+        top.addWidget(self.btn_clear)
+        top.addWidget(self.btn_open)
+
+        # Textansicht
+        self.view = QTextEdit(self)
+        self.view.setReadOnly(True)
 
         root = QVBoxLayout(self)
         root.addLayout(top)
-        root.addWidget(self.text, 1)
-        root.addWidget(self.status)
-        root.addLayout(btns)
+        root.addWidget(self.view, 1)
 
-        self.paused = False
-        self._connect()
-        self._load_initial()
+        # Events
+        self.level_combo.currentIndexChanged.connect(self._apply_filters)
+        self.search_edit.textChanged.connect(self._apply_filters)
+        self.regex_cb.toggled.connect(self._apply_filters)
+        self.case_cb.toggled.connect(self._apply_filters)
+        self.auto_cb.toggled.connect(self._toggle_auto)
+        self.pause_cb.toggled.connect(self._toggle_pause)
+        self.btn_refresh.clicked.connect(self._reload_all)
+        self.btn_clear.clicked.connect(self._clear_file)
+        self.btn_open.clicked.connect(self._open_external)
 
-    def _connect(self):
-        self.btn_close.clicked.connect(self.accept)
-        self.btn_pause.clicked.connect(self._toggle_pause)
-        self.btn_clear.clicked.connect(lambda: self.text.setPlainText(""))
-        self.btn_open.clicked.connect(self._open_folder)
-        self.btn_copy.clicked.connect(self._copy_path)
-        self.filter_edit.textChanged.connect(self._apply_filter)
+        # Timer Polling
+        self._timer = QTimer(self)
+        self._timer.setInterval(500)
+        self._timer.timeout.connect(self._poll_append)
+        self._timer.start()
 
-        bridge = get_log_bridge()
-        if bridge is not None:
-            bridge.lineEmitted.connect(self._on_line)
-        else:
-            # Fallback Poller
-            self._poller = QTimer(self)
-            self._poller.setInterval(1000)
-            self._poller.timeout.connect(self._poll_tail)
-            self._poller.start()
-
-    def _load_initial(self):
-        buf = read_recent_logs(1000)
-        self.text.setPlainText(buf)
-        self.status.setText(f"{len(buf.splitlines())} Zeilen")
-
-    def _apply_filter(self):
-        # einfache Filterung auf dem Memory Buffer
-        buf = read_recent_logs(2000)
-        q = self.filter_edit.text().strip()
-        if not q:
-            self.text.setPlainText(buf)
-        else:
-            lines = [l for l in buf.splitlines() if q.lower() in l.lower()]
-            self.text.setPlainText("\n".join(lines))
-        self.text.moveCursor(self.text.textCursor().End)
-
-    def _toggle_pause(self):
-        self.paused = not self.paused
-        self.btn_pause.setText("Fortsetzen" if self.paused else "Pause")
-
-    def _on_line(self, line: str):
-        if self.paused:
-            return
-        q = self.filter_edit.text().strip()
-        if q and q.lower() not in line.lower():
-            return
-        self.text.appendPlainText(line)
-        self.status.setText(f"{self.text.blockCount()} Zeilen")
-        self.text.moveCursor(self.text.textCursor().End)
-
-    def _poll_tail(self):
-        if self.paused:
-            return
-        self._apply_filter()
-
-    def _open_folder(self):
-        path = get_log_path()
-        folder = os.path.dirname(path)
-        QFileDialog.getOpenFileName(self, "Logdatei", folder, "Log (*.log *.txt);;Alle (*)")
-
-    def _copy_path(self):
-        path = get_log_path()
-        cb = self.clipboard()
+        # Live Bridge
         try:
-            from PySide6.QtWidgets import QApplication
-            QApplication.clipboard().setText(path)
-            QMessageBox.information(self, "Kopiert", f"Pfad kopiert\n{path}")
+            bridge = get_log_bridge()
+            if bridge is not None:
+                bridge.lineEmitted.connect(self._on_bridge_line)
         except Exception:
             pass
+
+        # Initial laden
+        self._reload_all()
+
+    # ---------- Bedienung ----------
+    def _toggle_auto(self, _checked: bool):
+        pass  # kein spezielles Verhalten noetig
+
+    def _toggle_pause(self, checked: bool):
+        self._paused = bool(checked)
+
+    def _open_external(self):
+        path = self._path
+        if not os.path.isfile(path):
+            QMessageBox.information(self, "Info", "Keine Logdatei gefunden")
+            return
+        try:
+            # Dateidialog nur zum schnellen Kopieren oeffnen
+            QFileDialog.getOpenFileName(self, "Logdatei", path, "Log (*.log *.txt);;Alle Dateien (*)")
+        except Exception:
+            pass
+
+    def _clear_file(self):
+        # Datei wirklich leeren
+        try:
+            with open(self._path, "w", encoding="utf-8") as f:
+                f.write("")
+            self._buffer.clear()
+            self._file_pos = 0
+            self.view.clear()
+        except Exception as ex:
+            QMessageBox.warning(self, "Fehler", f"Logdatei konnte nicht geleert werden:\n{ex}")
+
+    def _reload_all(self):
+        """Komplette Datei neu laden und anzeigen."""
+        self._buffer.clear()
+        self._file_pos = 0
+        try:
+            if os.path.isfile(self._path):
+                with open(self._path, "r", encoding="utf-8", errors="ignore") as f:
+                    data = f.read()
+                self._buffer = data.splitlines()
+                self._file_pos = len(data.encode("utf-8", errors="ignore"))
+        except Exception:
+            pass
+        self._render_all()
+
+    def _poll_append(self):
+        """Neuen Anhang von der Datei lesen."""
+        if self._paused:
+            return
+        try:
+            if not os.path.isfile(self._path):
+                return
+            with open(self._path, "rb") as f:
+                f.seek(self._file_pos)
+                chunk = f.read()
+                if not chunk:
+                    return
+                self._file_pos += len(chunk)
+                text = chunk.decode("utf-8", errors="ignore")
+                new_lines = text.splitlines()
+                if not new_lines:
+                    return
+                self._buffer.extend(new_lines)
+                # Nur neue Zeilen reinfiltern und an View anhaengen
+                to_add = [ln for ln in new_lines if self._passes_filters(ln)]
+                if to_add:
+                    cursor = self.view.textCursor()
+                    cursor.movePosition(QTextCursor.End)
+                    self.view.setTextCursor(cursor)
+                    self.view.append("\n".join(to_add))
+                    if self.auto_cb.isChecked():
+                        cursor = self.view.textCursor()
+                        cursor.movePosition(QTextCursor.End)
+                        self.view.setTextCursor(cursor)
+        except Exception:
+            # still sein, Viewer soll robust sein
+            pass
+
+    def _on_bridge_line(self, line: str):
+        """Live Zeile aus Logger Bridge. Auch in Datei Poll moeglich, daher doppelt egal."""
+        if self._paused:
+            return
+        self._buffer.append(line)
+        if self._passes_filters(line):
+            cursor = self.view.textCursor()
+            cursor.movePosition(QTextCursor.End)
+            self.view.setTextCursor(cursor)
+            self.view.append(line)
+            if self.auto_cb.isChecked():
+                cursor = self.view.textCursor()
+                cursor.movePosition(QTextCursor.End)
+                self.view.setTextCursor(cursor)
+
+    # ---------- Filtern und Rendern ----------
+    def _render_all(self):
+        filtered = [ln for ln in self._buffer if self._passes_filters(ln)]
+        self.view.setPlainText("\n".join(filtered))
+        if self.auto_cb.isChecked():
+            cursor = self.view.textCursor()
+            cursor.movePosition(QTextCursor.End)
+            self.view.setTextCursor(cursor)
+
+    def _apply_filters(self):
+        self._render_all()
+
+    def _passes_filters(self, line: str) -> bool:
+        # Level Filter
+        lvl_sel = self.level_combo.currentText().upper()
+        if lvl_sel != "ALLE":
+            lvl = self._line_level(line)
+            # WARNING soll bei Auswahl WARNUNG angezeigt werden
+            target = "WARNING" if lvl_sel.startswith("WARN") else lvl_sel
+            if lvl != target:
+                return False
+        # Text Filter
+        patt = self.search_edit.text().strip()
+        if patt:
+            if self.regex_cb.isChecked():
+                flags = 0 if self.case_cb.isChecked() else re.IGNORECASE
+                try:
+                    if not re.search(patt, line, flags=flags):
+                        return False
+                except re.error:
+                    # ungueltige Regex behandelt wie kein Treffer
+                    return False
+            else:
+                hay = line if self.case_cb.isChecked() else line.lower()
+                needle = patt if self.case_cb.isChecked() else patt.lower()
+                if needle not in hay:
+                    return False
+        return True
+
+    def _line_level(self, line: str) -> str:
+        u = line.upper()
+        if '"LEVEL": "DEBUG"' in u or " DEBUG " in u or u.startswith("DEBUG"):
+            return "DEBUG"
+        if '"LEVEL": "INFO"' in u or " INFO " in u or u.startswith("INFO"):
+            return "INFO"
+        if '"LEVEL": "WARNING"' in u or " WARNING " in u or u.startswith("WARNING"):
+            return "WARNING"
+        if '"LEVEL": "ERROR"' in u or " ERROR " in u or u.startswith("ERROR"):
+            return "ERROR"
+        return "INFO"  # neutrale Vorgabe

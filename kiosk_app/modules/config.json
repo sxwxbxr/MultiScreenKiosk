@@ -3,26 +3,29 @@
     {
       "type": "browser",
       "name": "Google",
-      "url": "https://www.google.com/",
-      "embed_mode": "native_window"
+      "url": "https://www.google.com"
     },
     {
       "type": "browser",
-      "name": "Google 2",
-      "url": "https://www.google.com/",
-      "embed_mode": "native_window"
+      "name": "ChatGPT",
+      "url": "https://chat.openai.com"
     },
     {
       "type": "browser",
-      "name": "Google 3",
-      "url": "https://www.google.com/",
-      "embed_mode": "native_window"
+      "name": "Proton",
+      "url": "https://mail.proton.me"
     },
     {
       "type": "local",
-      "name": "Notepad",
-      "launch_cmd": "C:\\\\Windows\\\\notepad.exe",
-      "embed_mode": "native_window"
+      "name": "Editor",
+      "launch_cmd": "D:/Telsonic/WCS/BIN200/Telsonic.TS.TFX.UI.App.exe",
+      "args": "D:\\Telsonic\\WCS\\DATA200\\Config\\WCS.tfcon",
+      "embed_mode": "native_window",
+      "window_title_pattern": null,
+      "window_class_pattern": null,
+      "child_window_class_pattern": null,
+      "follow_children": true,
+      "allow_global_fallback": true
     }
   ],
   "ui": {
@@ -31,7 +34,7 @@
     "nav_orientation": "left",
     "show_setup_on_start": false,
     "enable_hamburger": true,
-    "placeholder_enabled": false,
+    "placeholder_enabled": true,
     "placeholder_gif_path": "",
     "theme": "light",
     "logo_path": ""

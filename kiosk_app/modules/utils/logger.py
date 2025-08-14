@@ -1,4 +1,3 @@
-# modules/utils/logger.py
 from __future__ import annotations
 import json
 import logging
@@ -6,37 +5,39 @@ import os
 import queue
 import re
 import sys
-from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
 from logging.handlers import QueueHandler, QueueListener, RotatingFileHandler
 from typing import Any, Deque, Dict, Optional, Tuple
+from collections import deque
 
-# Qt Bridge ist optional. Import im Try damit der Logger auch ohne Qt funktioniert.
+# Qt Bridge optional
 try:
-    from PySide6.QtCore import QObject, Signal, QCoreApplication  # type: ignore
+    from PySide6.QtCore import QObject, Signal, QCoreApplication
     _HAVE_QT = True
 except Exception:
     _HAVE_QT = False
     QObject = object  # type: ignore
 
-# ========= Konfiguration =========
+try:
+    from shiboken6 import isValid as _is_valid_qobj  # type: ignore
+except Exception:
+    def _is_valid_qobj(_obj):  # type: ignore
+        return True
 
 @dataclass
 class LoggingConfig:
-    level: str = "INFO"                         # DEBUG, INFO, WARNING, ERROR
+    level: str = "INFO"
     fmt: str = "plain"                          # plain oder json
-    dir: Optional[str] = None                   # Zielordner fuer Logfiles
-    filename: str = "kiosk.log"                 # Name der Logdatei
-    rotate_max_bytes: int = 5 * 1024 * 1024     # 5 MB
-    rotate_backups: int = 5                     # Anzahl Backups
-    console: bool = True                        # Ausgabe auf STDERR
-    qt_messages: bool = True                    # Qt Meldungen in Logging umleiten
+    dir: Optional[str] = None
+    filename: str = "kiosk.log"
+    rotate_max_bytes: int = 5 * 1024 * 1024
+    rotate_backups: int = 5
+    console: bool = True
+    qt_messages: bool = True
     mask_keys: Tuple[str, ...] = ("password", "token", "authorization", "auth", "secret")
-    memory_buffer: int = 2000                   # Zeilen fuer Live Viewer
-    enable_qt_bridge: bool = True               # Live Push ins UI
-
-# ========= Globale Objekte =========
+    memory_buffer: int = 2000
+    enable_qt_bridge: bool = True
 
 _log_queue: "queue.Queue[logging.LogRecord]" = queue.Queue()
 _listener: Optional[QueueListener] = None
@@ -45,13 +46,9 @@ _memory_ring: Deque[str] = deque(maxlen=2000)
 _root_config: Optional[LoggingConfig] = None
 _session_id: str = datetime.utcnow().strftime("%Y%m%d-%H%M%S-%f")
 
-# ========= Formatter =========
-
 class PlainFormatter(logging.Formatter):
     default_msec_format = '%s.%03d'
-
     def format(self, record: logging.LogRecord) -> str:
-        # zusaetzliche Felder robust abfragen
         sid = getattr(record, "session", _session_id)
         src = getattr(record, "source", None)
         view = getattr(record, "view", None)
@@ -85,38 +82,33 @@ class JsonFormatter(logging.Formatter):
             payload["exc_info"] = self.formatException(record.exc_info)
         return json.dumps(payload, ensure_ascii=False)
 
-# ========= Filter =========
-
 class SecretsFilter(logging.Filter):
-    """Maskiert bekannte Schluessel in Messages."""
     def __init__(self, keys: Tuple[str, ...]):
         super().__init__()
         self.patterns = [re.compile(rf"(?i)\b({re.escape(k)})\b\s*[:=]\s*([^\s,;]+)") for k in keys]
-
     def filter(self, record: logging.LogRecord) -> bool:
         msg = record.getMessage()
         for pat in self.patterns:
             msg = pat.sub(r"\1=<redacted>", msg)
-        # setMessage gibt es nicht, daher record.msg anpassen wenn string
         if isinstance(record.msg, str):
             record.msg = msg
         return True
-
-# ========= Memory und Qt Bridge =========
 
 class MemoryRingHandler(logging.Handler):
     def __init__(self, capacity: int):
         super().__init__()
         self.capacity = capacity
-
     def emit(self, record: logging.LogRecord) -> None:
         try:
             line = self.format(record)
         except Exception:
             return
         _memory_ring.append(line)
-        if _bridge is not None:
-            _bridge.emit_line(line)
+        try:
+            if _bridge is not None:
+                _bridge.emit_line(line)
+        except Exception:
+            pass
 
 def read_recent_logs(limit: int = 500) -> str:
     if limit <= 0:
@@ -124,25 +116,23 @@ def read_recent_logs(limit: int = 500) -> str:
     lines = list(_memory_ring)[-limit:]
     return "\n".join(lines)
 
-def get_log_bridge():
-    return _bridge
+def get_log_path() -> str:
+    if _root_config is None:
+        d = _default_log_dir()
+        return os.path.join(d, "kiosk.log")
+    d = _root_config.dir or _default_log_dir()
+    return os.path.join(d, _root_config.filename)
 
-if _HAVE_QT:
-    class QtLogBridge(QObject):
-        lineEmitted = Signal(str)
-
-        def emit_line(self, text: str):
-            if QCoreApplication.instance() is not None:
-                self.lineEmitted.emit(text)
-else:
-    class QtLogBridge:  # type: ignore
-        def emit_line(self, text: str):  # no-op
-            pass
-
-# ========= Initialisierung =========
+def clear_log() -> None:
+    path = get_log_path()
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("")
+    except Exception:
+        pass
+    _memory_ring.clear()
 
 def _default_log_dir() -> str:
-    # Bevorzugt LOCALAPPDATA
     base = os.getenv("LOCALAPPDATA", "")
     if base:
         d = os.path.join(base, "MultiScreenKiosk", "logs")
@@ -151,36 +141,51 @@ def _default_log_dir() -> str:
     os.makedirs(d, exist_ok=True)
     return d
 
+# NEU: fuer den Log Viewer
+def get_log_bridge():
+    return _bridge
+
+if _HAVE_QT:
+    class QtLogBridge(QObject):
+        lineEmitted = Signal(str)
+        def emit_line(self, text: str):
+            try:
+                if QCoreApplication.instance() is None:
+                    return
+                if not _is_valid_qobj(self):
+                    return
+                self.lineEmitted.emit(text)
+            except Exception:
+                pass
+else:
+    class QtLogBridge:  # type: ignore
+        def emit_line(self, text: str):  # no-op
+            pass
+
 def _parse_level(s: str) -> int:
     return getattr(logging, str(s).upper(), logging.INFO)
 
 def init_logging(cfg: Optional[LoggingConfig]) -> None:
-    """Initialisiert asynchrones Logging mit Rotation und optional JSON."""
     global _listener, _bridge, _root_config, _memory_ring
 
     _root_config = cfg or LoggingConfig()
-    # Zielordner
     log_dir = _root_config.dir or _default_log_dir()
     os.makedirs(log_dir, exist_ok=True)
     logfile = os.path.join(log_dir, _root_config.filename)
 
-    # Root Logger entkoppeln
     root = logging.getLogger()
     root.handlers.clear()
     root.setLevel(_parse_level(_root_config.level))
 
-    # Queue Handler am Root
     qh = QueueHandler(_log_queue)
     qh.setLevel(root.level)
     root.addHandler(qh)
 
-    # Formatter fuer Zielhandler
     if _root_config.fmt.lower() == "json":
         formatter: logging.Formatter = JsonFormatter()
     else:
         formatter = PlainFormatter(fmt="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-    # Zielhandler bauen
     file_handler = RotatingFileHandler(
         logfile, maxBytes=_root_config.rotate_max_bytes,
         backupCount=_root_config.rotate_backups, encoding="utf-8"
@@ -190,45 +195,32 @@ def init_logging(cfg: Optional[LoggingConfig]) -> None:
 
     handlers = [file_handler]
 
-    # Konsole
     if _root_config.console:
         sh = logging.StreamHandler(stream=sys.stderr)
         sh.setFormatter(formatter)
         sh.addFilter(SecretsFilter(_root_config.mask_keys))
         handlers.append(sh)
 
-    # Memory Ring fuer Live Viewer
     _memory_ring = deque(maxlen=_root_config.memory_buffer)
     mem = MemoryRingHandler(capacity=_root_config.memory_buffer)
     mem.setFormatter(formatter)
     handlers.append(mem)
 
-    # Listener starten
     if _listener is not None:
         try:
             _listener.stop()
         except Exception:
             pass
     _listener = QueueListener(_log_queue, *handlers, respect_handler_level=False)
+    _listener.daemon = True
     _listener.start()
 
-    # Qt Bridge
-    if _root_config.enable_qt_bridge and _HAVE_QT:
-        _bridge = QtLogBridge()
-    else:
-        _bridge = None
+    _bridge = QtLogBridge() if (_root_config.enable_qt_bridge and _HAVE_QT) else None
 
-    # Qt Meldungen abfangen
     if _root_config.qt_messages:
         _install_qt_message_handler()
 
-    # Startbanner
-    get_logger(__name__).info(
-        "logging initialised",
-        extra={"session": _session_id, "source": "logging", "view": None}
-    )
-
-# ========= Helpers fuer Aufrufer =========
+    get_logger(__name__).info("logging initialised", extra={"session": _session_id, "source": "logging", "view": None})
 
 class _Adapter(logging.LoggerAdapter):
     def process(self, msg, kwargs):
@@ -250,29 +242,20 @@ def set_global_level(level: str) -> None:
     root.setLevel(_parse_level(level))
     get_logger(__name__).info(f"runtime log level set to {level}", extra={"source": "logging"})
 
-def get_log_path() -> str:
-    if _root_config is None:
-        d = _default_log_dir()
-        return os.path.join(d, "kiosk.log")
-    d = _root_config.dir or _default_log_dir()
-    return os.path.join(d, _root_config.filename)
-
-# ========= Qt Message Handler =========
-
 def _install_qt_message_handler():
     if not _HAVE_QT:
         return
     try:
-        from PySide6.QtCore import qInstallMessageHandler  # type: ignore
+        from PySide6.QtCore import qInstallMessageHandler
     except Exception:
         return
 
     log = get_logger("qt")
 
     def handler(msg_type, context, message):
-        # 0=Debug,1=Info,2=Warning,3=Critical,4=Fatal
-        lvl_map = {0: logging.DEBUG, 1: logging.INFO, 2: logging.WARNING, 3: logging.ERROR, 4: logging.CRITICAL}
-        lvl = lvl_map.get(int(msg_type), logging.INFO)
+        # 0..4: Debug, Info, Warning, Critical, Fatal
+        mapping = {0: logging.DEBUG, 1: logging.INFO, 2: logging.WARNING, 3: logging.ERROR, 4: logging.CRITICAL}
+        lvl = mapping.get(int(msg_type), logging.INFO)
         log.log(lvl, str(message), extra={"source": "qt"})
 
     try:

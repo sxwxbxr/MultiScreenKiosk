@@ -1,3 +1,4 @@
+# modules/services/local_app_service.py
 from __future__ import annotations
 
 import ctypes
@@ -6,18 +7,19 @@ import subprocess
 import sys
 import time
 import re
+import shlex
+import os
 from dataclasses import dataclass
 from threading import Thread, Event
 from typing import Optional, Set, Dict, List
 
 from PySide6.QtCore import Qt, QTimer, QSize
 from PySide6.QtGui import QWindow
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QApplication
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
 
 from modules.utils.logger import get_logger
 
-
-# ---------------- Win32 Setup ----------------
+# ================= Win32 Binding =================
 
 def _load_user32_attr(name: str):
     try:
@@ -39,9 +41,20 @@ DWORD  = wintypes.DWORD
 BOOL   = wintypes.BOOL
 LPARAM = wintypes.LPARAM
 UINT   = wintypes.UINT
-LONG_PTR = wintypes.LPARAM  # fuer GetWindowLongPtr Rueckgabe
 
-# EnumWindows
+# LONG_PTR und LRESULT kompatibel fuer Python 3.13
+if ctypes.sizeof(ctypes.c_void_p) == 8:
+    _LONG_PTR_T = ctypes.c_longlong
+else:
+    _LONG_PTR_T = ctypes.c_long
+LONG_PTR = _LONG_PTR_T
+
+WPARAM = wintypes.WPARAM
+try:
+    LRESULT = wintypes.LRESULT  # type: ignore[attr-defined]
+except AttributeError:
+    LRESULT = LONG_PTR
+
 EnumWindowsProc = ctypes.WINFUNCTYPE(BOOL, HWND, LPARAM)
 
 GetWindowThreadProcessId = user32.GetWindowThreadProcessId
@@ -51,6 +64,10 @@ GetWindowThreadProcessId.restype  = DWORD
 EnumWindows = user32.EnumWindows
 EnumWindows.argtypes = [EnumWindowsProc, LPARAM]
 EnumWindows.restype  = BOOL
+
+EnumChildWindows = user32.EnumChildWindows
+EnumChildWindows.argtypes = [HWND, EnumWindowsProc, LPARAM]
+EnumChildWindows.restype  = BOOL
 
 IsWindow = user32.IsWindow
 IsWindow.argtypes = [HWND]
@@ -77,18 +94,37 @@ ShowWindow = user32.ShowWindow
 ShowWindow.argtypes = [HWND, ctypes.c_int]
 ShowWindow.restype  = BOOL
 SW_SHOW = 5
+SW_SHOWNOACTIVATE = 4
+SW_RESTORE = 9
 
-SetForegroundWindow = user32.SetForegroundWindow
-SetForegroundWindow.argtypes = [HWND]
-SetForegroundWindow.restype = BOOL
+MoveWindow = user32.MoveWindow
+MoveWindow.argtypes = [HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, BOOL]
+MoveWindow.restype  = BOOL
 
-# WaitForInputIdle ist nicht immer verfuegbar, daher guard
-_WaitForInputIdle = _load_user32_attr("WaitForInputIdle")
-if _WaitForInputIdle:
-    _WaitForInputIdle.argtypes = [wintypes.HANDLE, DWORD]
-    _WaitForInputIdle.restype = DWORD  # 0 = OK, WAIT_TIMEOUT = 0x102
+SendMessageW = user32.SendMessageW
+SendMessageW.argtypes = [HWND, UINT, WPARAM, LPARAM]
+SendMessageW.restype  = LRESULT
 
-# Fallback Reparenting
+PostMessageW = user32.PostMessageW
+PostMessageW.argtypes = [HWND, UINT, WPARAM, LPARAM]
+PostMessageW.restype  = BOOL
+
+RedrawWindow = user32.RedrawWindow
+RedrawWindow.argtypes = [HWND, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint]
+RedrawWindow.restype  = BOOL
+
+WM_SIZE = 0x0005
+WM_WINDOWPOSCHANGING = 0x0046
+WM_WINDOWPOSCHANGED  = 0x0047
+WM_SETREDRAW = 0x000B
+SIZE_RESTORED = 0
+
+RDW_INVALIDATE   = 0x0001
+RDW_ERASE        = 0x0004
+RDW_ALLCHILDREN  = 0x0080
+RDW_UPDATENOW    = 0x0100
+RDW_NOFRAME      = 0x0800
+
 GetWindowLongPtrW = user32.GetWindowLongPtrW
 GetWindowLongPtrW.argtypes = [HWND, ctypes.c_int]
 GetWindowLongPtrW.restype  = LONG_PTR
@@ -108,10 +144,21 @@ SetParent.restype = HWND
 GWL_STYLE = -16
 WS_CHILD = 0x40000000
 WS_POPUP = 0x80000000
+WS_CAPTION = 0x00C00000
+WS_THICKFRAME = 0x00040000
+WS_MINIMIZEBOX = 0x00020000
+WS_MAXIMIZEBOX = 0x00010000
+WS_CLIPSIBLINGS = 0x04000000
+WS_CLIPCHILDREN = 0x02000000
+
 SWP_NOSIZE = 0x0001
 SWP_NOMOVE = 0x0002
 SWP_NOZORDER = 0x0004
+SWP_NOOWNERZORDER = 0x0200
+SWP_NOACTIVATE = 0x0010
 SWP_FRAMECHANGED = 0x0020
+SWP_ASYNCWINDOWPOS = 0x4000
+SWP_NOSENDCHANGING = 0x0400
 
 # Toolhelp fuer Kindprozesse
 TH32CS_SNAPPROCESS = 0x00000002
@@ -144,16 +191,18 @@ Process32NextW = kernel32.Process32NextW
 Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32)]
 Process32NextW.restype  = BOOL
 
+# WaitForInputIdle kann fehlen
+_WaitForInputIdle = _load_user32_attr("WaitForInputIdle")
+if _WaitForInputIdle:
+    _WaitForInputIdle.argtypes = [wintypes.HANDLE, DWORD]
+    _WaitForInputIdle.restype  = DWORD  # 0 OK, 0x102 Timeout
 
-# ---------------- Prozesse abfragen ----------------
+# ================= Prozesse abfragen =================
 
 def snapshot_processes() -> tuple[Dict[int, int], Dict[int, str]]:
-    """
-    Liefert child_pid -> parent_pid und pid -> exe_name.
-    """
     hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
     if int(hSnap) == -1 or hSnap is None:
-        raise OSError("CreateToolhelp32Snapshot fehlgeschlagen")
+        return {}, {}
 
     parent_map: Dict[int, int] = {}
     exe_map: Dict[int, str] = {}
@@ -176,61 +225,38 @@ def snapshot_processes() -> tuple[Dict[int, int], Dict[int, str]]:
 
     return parent_map, exe_map
 
-
-# ---------------- Helfer ----------------
+# ================= Hilfen =================
 
 def _expected_exe_from_cmd(cmd: str) -> str:
-    """
-    Gibt den erwarteten Exe Dateinamen aus dem launch_cmd zurueck, in lower case.
-    Beispiel: "C:\\Windows\\notepad.exe /A" -> "notepad.exe"
-    """
-    s = (cmd or "").strip().strip('"').strip("'")
-    if not s:
-        return ""
-    # bis erstes Leerzeichen nehmen
-    path = s.split(" ", 1)[0]
-    # nur Dateiname
-    base = path.replace("/", "\\").split("\\")[-1]
-    return base.lower()
+    # Pfad bereinigen und nur Dateiname nehmen
+    c = (cmd or "").strip().strip('"')
+    return os.path.basename(c).lower()
 
-def _safe_wait_input_idle(popen: subprocess.Popen, timeout_ms: int = 2000) -> None:
-    """
-    Ruft WaitForInputIdle sicher auf, wenn verfuegbar. Ignoriert Fehler.
-    """
-    try:
-        if _WaitForInputIdle is None:
-            return
-        # Handle aus Popen holen
-        h = getattr(popen, "_handle", None)
-        if h is None:
-            return
-        _WaitForInputIdle(wintypes.HANDLE(int(h)), DWORD(timeout_ms))
-    except Exception:
-        return
-
-
-# ---------------- Modell ----------------
+# ================= Datenmodell =================
 
 @dataclass
 class LocalAppSpec:
     launch_cmd: str
+    args: Optional[str] = ""                  # Parameter fuer EXE Start
     embed_mode: str = "native_window"
     window_title_pattern: Optional[str] = None
     window_class_pattern: Optional[str] = None
+    child_window_class_pattern: Optional[str] = None
+    child_window_title_pattern: Optional[str] = None
     follow_children: bool = True
     web_url: Optional[str] = None
+    # Neu: globalen Fallback explizit erlauben
+    allow_global_fallback: bool = False
 
-
-# ---------------- Widget ----------------
+# ================= Widget =================
 
 class LocalAppWidget(QWidget):
     """
-    Startet eine lokale App, merkt sich die PID, sucht sichtbare Top Level Fenster
-    der PID oder deren Kindprozesse und bettet das Fenster als QWindow in Qt ein.
-    Fallback: natives Reparenting via SetParent falls noetig.
+    Startet eine lokale App, sucht sichtbare Fenster der PID und bettet ein geeignetes Fenster ein.
+    Sicherung: ohne explizite Freigabe wird nie ein fremdes Programm eingefangen.
     """
 
-    def __init__(self, spec: LocalAppSpec, parent: Optional[Widget] = None):  # type: ignore[name-defined]
+    def __init__(self, spec: LocalAppSpec, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.spec = spec
         self.log = get_logger(__name__)
@@ -264,16 +290,15 @@ class LocalAppWidget(QWidget):
         self._resize_timer.setSingleShot(True)
         self._resize_timer.timeout.connect(self._apply_resize)
 
-        # fuer Debug
-        self._expected_exe = _expected_exe_from_cmd(spec.launch_cmd)
+        self._last_find_attempt_ms = 0
+        self._reattach_cooldown_ms = 800
 
-    # -------- API --------
+        # Erwartete EXE zur Plausibilitaet
+        self._expected_exe: str = _expected_exe_from_cmd(getattr(self.spec, "launch_cmd", ""))
+
+    # ---------- API ----------
     def start(self):
-        if self._starting:
-            self.log.info("start ignoriert, Start laeuft bereits", extra={"source": "local"})
-            return
-        if self._worker and self._worker.is_alive():
-            self.log.info("start ignoriert, Worker aktiv", extra={"source": "local"})
+        if self._starting or (self._worker and self._worker.is_alive()):
             return
         self._starting = True
         self._stop_evt.clear()
@@ -299,7 +324,6 @@ class LocalAppWidget(QWidget):
         self._starting = False
 
     def heartbeat(self):
-        # Prozess beendet
         if self._proc and self._proc.poll() is not None:
             self.log.warning("Prozess ist beendet, starte neu", extra={"source": "local"})
             self._proc = None
@@ -310,19 +334,25 @@ class LocalAppWidget(QWidget):
                 self.start()
             return
 
-        # Fenster verloren
         if self._embedded_hwnd and not bool(IsWindow(HWND(self._embedded_hwnd))):
             self.log.warning("Fenster verloren, versuche Reattach", extra={"source": "local"})
             self._embedded_hwnd = None
             self._detach_ui()
-            self._find_and_embed(timeout_s=8.0)
 
-    # Fuer Fenster Spy, manuelles Attach
+        if self._proc and self._proc.poll() is None and not self._embedded_hwnd:
+            now = int(time.time() * 1000)
+            if now - self._last_find_attempt_ms >= self._reattach_cooldown_ms:
+                self._last_find_attempt_ms = now
+                self._find_and_embed(timeout_s=1.0)
+
     def force_attach(self, hwnd: int):
         self.log.info(f"manuelles Attach auf hwnd={hwnd}", extra={"source": "local"})
         self._embed_hwnd(hwnd)
 
-    # -------- Events --------
+    def force_fit(self):
+        self._apply_resize(force=True)
+
+    # ---------- Qt Events ----------
     def resizeEvent(self, ev):
         super().resizeEvent(ev)
         self._resize_timer.start()
@@ -331,59 +361,64 @@ class LocalAppWidget(QWidget):
         super().showEvent(ev)
         self._resize_timer.start()
 
-    def mousePressEvent(self, ev):
-        super().mousePressEvent(ev)
-        if self._embedded_hwnd:
-            try:
-                SetForegroundWindow(HWND(self._embedded_hwnd))
-            except Exception:
-                pass
-
-    # -------- Worker --------
+    # ---------- Worker ----------
     def _run(self):
         try:
             self._launch_process()
-            self._find_and_embed(timeout_s=25.0)
+            self._find_and_embed(timeout_s=30.0)
         except Exception:
             self.log.error("Fehler im LocalApp Embedder", exc_info=True, extra={"source": "local"})
         finally:
             self._starting = False
 
     def _launch_process(self):
-        if self._proc and self._proc.poll() is None:
-            return
-        cmd = (self.spec.launch_cmd or "").strip()
-        if not cmd:
-            raise RuntimeError("launch_cmd fehlt in LocalAppSpec")
+        cmd_path = (getattr(self.spec, "launch_cmd", "") or "").strip()
+        if not cmd_path:
+            raise RuntimeError("launch_cmd fehlt")
+        args_str = (getattr(self.spec, "args", "") or "").strip()
 
-        self.log.info(f"starte: {cmd}", extra={"source": "local"})
+        argv: List[str] = [cmd_path]
+        if args_str:
+            argv.extend(shlex.split(args_str, posix=False))
+
+        self.log.info(f"starte: {argv}", extra={"source": "local"})
         flags = 0
         if sys.platform == "win32":
             flags |= getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        self._proc = subprocess.Popen(cmd, shell=False, creationflags=flags)  # nosec
+        self._proc = subprocess.Popen(argv, shell=False, creationflags=flags)  # nosec
         self._pid = int(self._proc.pid)
 
-        # GUI Zeit geben
-        _safe_wait_input_idle(self._proc, 2000)
+        try:
+            if _WaitForInputIdle is not None:
+                h = getattr(self._proc, "_handle", None)
+                if h is not None:
+                    _WaitForInputIdle(wintypes.HANDLE(int(h)), DWORD(2000))
+        except Exception:
+            pass
 
-        # kurze Gnadenfrist
         t0 = time.time()
-        while time.time() - t0 < 0.6 and not self._stop_evt.is_set():
-            if self._proc.poll() is not None:
-                raise RuntimeError("Prozess beendete sich direkt nach Start")
+        while time.time() - t0 < 0.6 and self._proc and self._proc.poll() is None:
             time.sleep(0.05)
 
-    # -------- Finden und Einbetten --------
+    # ---------- Finden und Einbetten ----------
     def _find_and_embed(self, timeout_s: float):
-        title_rx = re.compile(self.spec.window_title_pattern, re.I) if self.spec.window_title_pattern else None
-        class_rx = re.compile(self.spec.window_class_pattern, re.I) if self.spec.window_class_pattern else None
+        title_pat = getattr(self.spec, "window_title_pattern", None)
+        class_pat = getattr(self.spec, "window_class_pattern", None)
+        title_rx = re.compile(title_pat, re.I) if title_pat else None
+        class_rx = re.compile(class_pat, re.I) if class_pat else None
+        follow_children = bool(getattr(self.spec, "follow_children", True))
+        allow_global = bool(getattr(self.spec, "allow_global_fallback", False))
 
         t_end = time.time() + timeout_s
         last_log = 0.0
 
         while not self._stop_evt.is_set() and time.time() < t_end:
-            pid_set = self._build_pid_set(self._pid) if self.spec.follow_children else ({self._pid} if self._pid else set())
+            pid_set = self._build_pid_set(self._pid) if follow_children else ({self._pid} if self._pid else set())
             hwnd = self._pick_window(pid_set, title_rx, class_rx)
+
+            if not hwnd and allow_global and (title_rx or class_rx):
+                # Global nur, wenn EXE zur erwarteten EXE passt
+                hwnd = self._pick_window_global(title_rx, class_rx)
 
             if hwnd:
                 self._embed_hwnd(hwnd)
@@ -391,9 +426,13 @@ class LocalAppWidget(QWidget):
 
             now = time.time()
             if now - last_log > 2.5:
-                self.log.info(f"suche Fenster fuer PID Set {sorted(list(pid_set))}", extra={"source": "local"})
+                self.log.info(
+                    f"suche Fenster; pid_set={sorted(list(pid_set))} "
+                    f"filter_title={'ja' if title_rx else 'nein'} filter_class={'ja' if class_rx else 'nein'} "
+                    f"global={'ja' if allow_global else 'nein'} expected_exe={self._expected_exe}",
+                    extra={"source": "local"}
+                )
                 last_log = now
-
             time.sleep(0.15)
 
         self.log.warning("kein Fenster zum Einbetten gefunden", extra={"source": "local"})
@@ -404,7 +443,7 @@ class LocalAppWidget(QWidget):
         try:
             parent_map, _ = snapshot_processes()
         except Exception:
-            return {root_pid}
+            return {int(root_pid)}
 
         result: Set[int] = {int(root_pid)}
         queue: List[int] = [int(root_pid)]
@@ -416,18 +455,29 @@ class LocalAppWidget(QWidget):
                     queue.append(child)
         return result
 
+    def _exe_matches_expected(self, pid: int, exe_map: Dict[int, str]) -> bool:
+        expected = self._expected_exe
+        if not expected:
+            return True
+        exe = exe_map.get(pid, "") or ""
+        return os.path.basename(exe).lower() == expected
+
     def _pick_window(self,
                      pid_set: Set[int],
                      title_rx: Optional[re.Pattern],
                      class_rx: Optional[re.Pattern]) -> Optional[int]:
+        if not pid_set:
+            return None
+
+        # Einmaliges Mapping holen
+        _, exe_map = snapshot_processes()
+
         candidates: List[int] = []
         titles: Dict[int, str] = {}
         classes: Dict[int, str] = {}
         pids: Dict[int, int] = {}
 
-        expected_exe = self._expected_exe
-
-        def _cb(hwnd, lparam):
+        def _cb(hwnd, _lparam):
             try:
                 if not IsWindowVisible(hwnd):
                     return True
@@ -435,25 +485,24 @@ class LocalAppWidget(QWidget):
                 if not root or root != hwnd:
                     return True
 
-                # PID
                 proc_id = DWORD(0)
                 GetWindowThreadProcessId(hwnd, ctypes.byref(proc_id))
                 pid = int(proc_id.value)
-
-                if pid_set and pid not in pid_set:
+                if pid not in pid_set:
                     return True
 
-                # Titel
+                # EXE Plausibilitaet
+                if not self._exe_matches_expected(pid, exe_map):
+                    return True
+
                 tbuf = ctypes.create_unicode_buffer(512)
                 GetWindowTextW(hwnd, tbuf, 512)
                 title = tbuf.value or ""
 
-                # Klasse
                 cbuf = ctypes.create_unicode_buffer(256)
                 GetClassNameW(hwnd, cbuf, 256)
                 cls = cbuf.value or ""
 
-                # Filter
                 if title_rx and not title_rx.search(title):
                     return True
                 if class_rx and not class_rx.search(cls):
@@ -470,51 +519,95 @@ class LocalAppWidget(QWidget):
         EnumWindows(EnumWindowsProc(_cb), 0)
 
         if candidates:
-            # score: wenn erwartete exe in pid_set vorkommt, reicht Laenge des Titels als Proxy
             def score(h: int) -> int:
                 return len(titles.get(h, "")) + (5 if classes.get(h) else 0)
             best = max(candidates, key=score)
             self.log.info(
-                f"Fensterkandidat: hwnd={best} pid={pids.get(best)} "
-                f"title='{titles.get(best,'')}' class='{classes.get(best,'')}'",
+                f"kandidat(pid): hwnd={best} pid={pids.get(best)} title='{titles.get(best,'')}' class='{classes.get(best,'')}'",
                 extra={"source": "local"}
             )
             return best
 
-        # Fallback ohne Filter: erstes sichtbares Root Fenster aus PID Set
-        if not title_rx and not class_rx and pid_set:
-            def _cb2(hwnd, lparam):
-                try:
-                    if not IsWindowVisible(hwnd):
-                        return True
-                    root = GetAncestor(hwnd, GA_ROOT)
-                    if not root or root != hwnd:
-                        return True
-                    proc_id = DWORD(0)
-                    GetWindowThreadProcessId(hwnd, ctypes.byref(proc_id))
-                    pid = int(proc_id.value)
-                    if pid in pid_set:
-                        candidates.append(int(hwnd))
-                except Exception:
-                    pass
-                return True
-            EnumWindows(EnumWindowsProc(_cb2), 0)
-            if candidates:
-                return candidates[0]
-
         return None
 
-    # -------- Einbetten --------
+    def _pick_window_global(self,
+                            title_rx: Optional[re.Pattern],
+                            class_rx: Optional[re.Pattern]) -> Optional[int]:
+        # Global nur mit EXE Filter
+        _, exe_map = snapshot_processes()
+
+        candidates: List[int] = []
+        titles: Dict[int, str] = {}
+        classes: Dict[int, str] = {}
+        pids: Dict[int, int] = {}
+
+        def _cb(hwnd, _lparam):
+            try:
+                if not IsWindowVisible(hwnd):
+                    return True
+                root = GetAncestor(hwnd, GA_ROOT)
+                if not root or root != hwnd:
+                    return True
+
+                proc_id = DWORD(0)
+                GetWindowThreadProcessId(hwnd, ctypes.byref(proc_id))
+                pid = int(proc_id.value)
+
+                if not self._exe_matches_expected(pid, exe_map):
+                    return True
+
+                tbuf = ctypes.create_unicode_buffer(512)
+                GetWindowTextW(hwnd, tbuf, 512)
+                title = tbuf.value or ""
+                cbuf = ctypes.create_unicode_buffer(256)
+                GetClassNameW(hwnd, cbuf, 256)
+                cls = cbuf.value or ""
+
+                if title_rx and not title_rx.search(title):
+                    return True
+                if class_rx and not class_rx.search(cls):
+                    return True
+
+                candidates.append(int(hwnd))
+                titles[int(hwnd)] = title
+                classes[int(hwnd)] = cls
+                pids[int(hwnd)] = pid
+            except Exception:
+                pass
+            return True
+
+        EnumWindows(EnumWindowsProc(_cb), 0)
+
+        if candidates:
+            def score(h: int) -> int:
+                return len(titles.get(h, "")) + (5 if classes.get(h) else 0)
+            best = max(candidates, key=score)
+            self.log.info(
+                f"kandidat(global): hwnd={best} pid={pids.get(best)} title='{titles.get(best,'')}' class='{classes.get(best,'')}'",
+                extra={"source": "local"}
+            )
+            return best
+        return None
+
+    # ---------- Einbetten ----------
     def _embed_hwnd(self, hwnd: int):
         if not hwnd:
             return
-        self._embedded_hwnd = int(hwnd)
 
-        # 1) Qt Weg
+        target = hwnd
+        try:
+            child = self._find_preferred_child(hwnd)
+            if child:
+                target = child
+        except Exception:
+            pass
+
+        self._embedded_hwnd = int(target)
+
         container = None
         foreign = None
         try:
-            foreign = QWindow.fromWinId(int(hwnd))
+            foreign = QWindow.fromWinId(int(target))
             foreign.setFlags(Qt.FramelessWindowHint)
             container = QWidget.createWindowContainer(foreign, parent=self)
             container.setFocusPolicy(Qt.StrongFocus)
@@ -524,6 +617,11 @@ class LocalAppWidget(QWidget):
             container = None
 
         def attach_ui():
+            try:
+                self._fix_styles_for_child(int(target))
+            except Exception:
+                pass
+
             if container is not None:
                 self._foreign_window = foreign
                 if self._container:
@@ -532,39 +630,110 @@ class LocalAppWidget(QWidget):
                 self._container = container
                 self._placeholder.setVisible(False)
                 self._root.addWidget(self._container, 1)
-                self._apply_resize()
+                self._apply_resize(force=True)
             else:
-                self._placeholder.setVisible(True)
+                self._native_reparent(int(target))
             try:
-                ShowWindow(HWND(self._embedded_hwnd), SW_SHOW)
+                ShowWindow(HWND(self._embedded_hwnd), SW_SHOWNOACTIVATE)
             except Exception:
                 pass
-            self.log.info("Fenster eingebettet via Qt Container" if container is not None else "Qt Container nicht verfuegbar", extra={"source": "local"})
+            self.log.info("Fenster eingebettet", extra={"source": "local"})
+
         QTimer.singleShot(0, attach_ui)
 
-        # 2) Fallback Reparenting
-        if container is None:
-            self._native_reparent(hwnd)
-
     def _native_reparent(self, hwnd: int):
-        """Als Fallback SetParent und Styles anpassen."""
         try:
+            self._fix_styles_for_child(hwnd)
             parent_hwnd = int(self.winId())
-            style = int(GetWindowLongPtrW(HWND(hwnd), GWL_STYLE))
-            style = (style | WS_CHILD) & ~WS_POPUP
-            SetWindowLongPtrW(HWND(hwnd), GWL_STYLE, LONG_PTR(style))
             SetParent(HWND(hwnd), HWND(parent_hwnd))
-            SetWindowPos(HWND(hwnd), None, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED)
+            SetWindowPos(HWND(hwnd), HWND(0), 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED | SWP_NOACTIVATE)
             self._embedded_hwnd = int(hwnd)
             self._placeholder.setVisible(False)
+            self._apply_resize(force=True)
             self.log.info("Fenster via SetParent eingebettet", extra={"source": "local"})
         except Exception as ex:
             self.log.error(f"native Reparenting fehlgeschlagen: {ex}", extra={"source": "local"})
 
-    def _apply_resize(self):
+    def _fix_styles_for_child(self, hwnd: int):
+        style = int(GetWindowLongPtrW(HWND(hwnd), GWL_STYLE))
+        style &= ~WS_POPUP
+        style &= ~WS_CAPTION
+        style &= ~WS_THICKFRAME
+        style &= ~WS_MINIMIZEBOX
+        style &= ~WS_MAXIMIZEBOX
+        style |= WS_CHILD | WS_CLIPSIBLINGS | WS_CLIPCHILDREN
+        SetWindowLongPtrW(HWND(hwnd), GWL_STYLE, LONG_PTR(style))
+        SetWindowPos(HWND(hwnd), HWND(0), 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED | SWP_NOACTIVATE)
+
+    def _find_preferred_child(self, root_hwnd: int) -> Optional[int]:
+        class_pat = getattr(self.spec, "child_window_class_pattern", None)
+        title_pat = getattr(self.spec, "child_window_title_pattern", None)
+        class_rx = re.compile(class_pat, re.I) if class_pat else None
+        title_rx = re.compile(title_pat, re.I) if title_pat else None
+
+        best = None
+        best_score = -1
+
+        def _cb(hwnd, _lp):
+            nonlocal best, best_score
+            try:
+                if not IsWindowVisible(hwnd):
+                    return True
+                tbuf = ctypes.create_unicode_buffer(512)
+                GetWindowTextW(hwnd, tbuf, 512)
+                title = tbuf.value or ""
+                cbuf = ctypes.create_unicode_buffer(256)
+                GetClassNameW(hwnd, cbuf, 256)
+                cls = cbuf.value or ""
+
+                score = 0
+                if class_rx and class_rx.search(cls):
+                    score += 100
+                if title_rx and title_rx.search(title):
+                    score += 50
+                score += min(len(title), 50)
+
+                if score > best_score:
+                    best_score = score
+                    best = int(hwnd)
+            except Exception:
+                pass
+            return True
+
+        EnumChildWindows(HWND(root_hwnd), EnumWindowsProc(_cb), 0)
+        return best
+
+    def _apply_resize(self, force: bool = False):
         if self._container:
             self._container.setMinimumSize(QSize(1, 1))
             self._container.resize(self.size())
+
+        if not self._embedded_hwnd:
+            return
+
+        w = max(1, int(self.width()))
+        h = max(1, int(self.height()))
+
+        try:
+            SendMessageW(HWND(self._embedded_hwnd), WM_SETREDRAW, WPARAM(0), LPARAM(0))
+            SetWindowPos(HWND(self._embedded_hwnd), HWND(0), 0, 0, 64, 64,
+                         SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOACTIVATE | SWP_NOSENDCHANGING | SWP_ASYNCWINDOWPOS)
+            MoveWindow(HWND(self._embedded_hwnd), 0, 0, w, h, True)
+            SetWindowPos(HWND(self._embedded_hwnd), HWND(0), 0, 0, w, h,
+                         SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED)
+            SendMessageW(HWND(self._embedded_hwnd), WM_SIZE, WPARAM(SIZE_RESTORED), LPARAM((h << 16) | (w & 0xFFFF)))
+        except Exception:
+            pass
+        finally:
+            try:
+                SendMessageW(HWND(self._embedded_hwnd), WM_SETREDRAW, WPARAM(1), LPARAM(0))
+                RedrawWindow(HWND(self._embedded_hwnd), None, None,
+                             RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW | RDW_NOFRAME)
+                ShowWindow(HWND(self._embedded_hwnd), SW_RESTORE)
+            except Exception:
+                pass
 
     def _detach_ui(self):
         def do_detach():

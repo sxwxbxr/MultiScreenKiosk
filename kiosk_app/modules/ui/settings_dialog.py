@@ -1,37 +1,118 @@
+# modules/ui/settings_dialog.py
 from __future__ import annotations
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
-from PySide6.QtCore import Qt, QPoint
+import os
+from PySide6.QtCore import Qt, QPoint, QTimer
 from PySide6.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QComboBox, QCheckBox, QLineEdit, QFileDialog, QTextEdit
+    QComboBox, QCheckBox, QLineEdit, QFileDialog, QTextEdit, QMessageBox
 )
 
-# Log Viewer und Log Pfad einbinden
+# Log Viewer und Log Pfad
 from modules.ui.log_viewer import LogViewer
 from modules.utils.logger import get_log_path
 
+# Fenster Spy
+try:
+    from modules.ui.window_spy import WindowSpyDialog
+    _HAVE_SPY = True
+except Exception:
+    _HAVE_SPY = False
+
+
+def _human_size(n: int) -> str:
+    units = ["B", "KB", "MB", "GB", "TB"]
+    size = float(max(0, n))
+    idx = 0
+    while size >= 1024.0 and idx < len(units) - 1:
+        size /= 1024.0
+        idx += 1
+    if idx == 0:
+        return f"{int(size)} {units[idx]}"
+    return f"{size:.2f} {units[idx]}"
+
 
 class LogStatsDialog(QDialog):
-    """Kleines Fenster mit einer uebersichtlichen Log Statistik."""
-    def __init__(self, text: str, parent: Optional[QWidget] = None):
+    """Live Log Statistik mit Dateigroesse und Level Zaehlern."""
+    def __init__(self, log_path: str, parent: Optional[QWidget] = None):
         super().__init__(parent)
+        self._path = log_path
         self.setWindowTitle("Log Statistik")
         self.setModal(False)
-        self.setMinimumSize(520, 320)
+        self.setMinimumSize(520, 360)
+
         layout = QVBoxLayout(self)
-        lbl = QLabel("Auswertung der aktuellen Logdatei:", self)
-        layout.addWidget(lbl)
-        view = QTextEdit(self)
-        view.setReadOnly(True)
-        view.setPlainText(text)
-        layout.addWidget(view)
+        self.lbl_info = QLabel(self)
+        layout.addWidget(self.lbl_info)
+
+        self.view = QTextEdit(self)
+        self.view.setReadOnly(True)
+        layout.addWidget(self.view, 1)
+
         btns = QHBoxLayout()
         btns.addStretch(1)
-        close_btn = QPushButton("Schliessen", self)
-        close_btn.clicked.connect(self.close)
-        btns.addWidget(close_btn)
+        self.btn_close = QPushButton("Schliessen", self)
+        self.btn_close.clicked.connect(self.close)
+        btns.addWidget(self.btn_close)
         layout.addLayout(btns)
+
+        self._timer = QTimer(self)
+        self._timer.setInterval(1000)
+        self._timer.timeout.connect(self._refresh)
+        self._timer.start()
+
+        self._refresh()
+
+    def closeEvent(self, ev):
+        try:
+            self._timer.stop()
+        except Exception:
+            pass
+        super().closeEvent(ev)
+
+    def _refresh(self):
+        path = self._path
+        info = warn = err = dbg = 0
+        size = 0
+        exists = os.path.isfile(path)
+        if exists:
+            try:
+                size = os.path.getsize(path)
+            except Exception:
+                size = 0
+        try:
+            if exists:
+                with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        u = line.upper()
+                        if " DEBUG " in u or u.startswith("DEBUG") or '"LEVEL": "DEBUG"' in u:
+                            dbg += 1
+                        elif " INFO " in u or u.startswith("INFO") or '"LEVEL": "INFO"' in u:
+                            info += 1
+                        elif " WARNING " in u or u.startswith("WARNING") or '"LEVEL": "WARNING"' in u:
+                            warn += 1
+                        elif " ERROR " in u or u.startswith("ERROR") or '"LEVEL": "ERROR"' in u:
+                            err += 1
+            total = info + warn + err + dbg
+            human = _human_size(size)
+            self.lbl_info.setText(f"Datei: {path}")
+            text = (
+                f"Groesse: {human} ({size} Bytes)\n"
+                f"Gesamt:  {total}\n"
+                f"Info:    {info}\n"
+                f"Warn:    {warn}\n"
+                f"Error:   {err}\n"
+                f"Debug:   {dbg}"
+            )
+        except FileNotFoundError:
+            self.lbl_info.setText(f"Datei: {path}")
+            text = "Keine Logdatei gefunden."
+        except Exception as ex:
+            self.lbl_info.setText(f"Datei: {path}")
+            text = f"Fehler beim Lesen der Logdatei:\n{ex}"
+
+        self.view.setPlainText(text)
 
 
 class SettingsDialog(QDialog):
@@ -63,7 +144,7 @@ class SettingsDialog(QDialog):
         self._result: Dict[str, Any] = {}
         self.setModal(True)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
-        self.setMinimumSize(560, 360)
+        self.setMinimumSize(640, 380)
 
         # ---------- Titlebar ----------
         bar = QWidget(self)
@@ -75,7 +156,6 @@ class SettingsDialog(QDialog):
         self.title_lbl = QLabel("Einstellungen", bar)
         bar_l.addWidget(self.title_lbl, 1)
 
-        # nur Close
         self.btn_close = QPushButton("×", bar)
         self.btn_close.setFixedWidth(28)
         self.btn_close.clicked.connect(self.reject)
@@ -111,7 +191,7 @@ class SettingsDialog(QDialog):
 
         # Placeholder
         row4 = QHBoxLayout()
-        self.placeholder_cb = QCheckBox("Platzhalter aktiv", self)
+        self.placeholder_cb = QCheckBox("Placeholder aktiv", self)
         self.placeholder_cb.setChecked(bool(placeholder_enabled))
         row4.addWidget(self.placeholder_cb)
 
@@ -144,13 +224,13 @@ class SettingsDialog(QDialog):
         footer = QHBoxLayout()
         self.btn_logs = QPushButton("Logs", self)
         self.btn_stats = QPushButton("Log Statistik", self)
-        self.btn_spy = QPushButton("Fenster Spy", self)  # neu
+        self.btn_spy = QPushButton("Fenster Spy", self)  # neu: Fenster Spy
         self.btn_quit = QPushButton("Beenden", self)
         self.btn_cancel = QPushButton("Abbrechen", self)
         self.btn_ok = QPushButton("Speichern", self)
         footer.addWidget(self.btn_logs)
         footer.addWidget(self.btn_stats)
-        footer.addWidget(self.btn_spy)  # neu
+        footer.addWidget(self.btn_spy)
         footer.addStretch(1)
         footer.addWidget(self.btn_quit)
         footer.addWidget(self.btn_cancel)
@@ -167,18 +247,16 @@ class SettingsDialog(QDialog):
         # Events
         self.btn_cancel.clicked.connect(self.reject)
         self.btn_ok.clicked.connect(self._accept_save)
-        # Logs und Statistik oeffnen, ohne den Dialog zu schliessen
         self.btn_logs.clicked.connect(self._open_logs_window)
         self.btn_stats.clicked.connect(self._open_stats_window)
-        # Fenster Spy nur ueber Einstellungen
-        self.btn_spy.clicked.connect(self._open_window_spy)
         self.btn_quit.clicked.connect(self._request_quit)
+        self.btn_spy.clicked.connect(self._open_window_spy)
 
         # Styling
         self._apply_style()
 
-        # Child-Dialoge referenzieren, damit sie nicht sofort vom GC geschlossen werden
-        self._child_windows: list[QDialog] = []
+        # Child Fenster Referenzen
+        self._child_windows: List[QDialog] = []
 
     # ------- Actions -------
     def _accept_save(self):
@@ -201,76 +279,61 @@ class SettingsDialog(QDialog):
         self._child_windows.append(dlg)
 
     def _open_stats_window(self):
-        # Datei lesen und zaehlen
         path = get_log_path()
-        info = warn = err = dbg = 0
-        try:
-            with open(path, "r", encoding="utf-8", errors="ignore") as f:
-                for line in f:
-                    u = line.upper()
-                    if " DEBUG " in u or u.startswith("DEBUG") or '"level": "DEBUG"' in u:
-                        dbg += 1
-                    elif " INFO " in u or u.startswith("INFO") or '"level": "INFO"' in u:
-                        info += 1
-                    elif " WARNING " in u or u.startswith("WARNING") or '"level": "WARNING"' in u:
-                        warn += 1
-                    elif " ERROR " in u or u.startswith("ERROR") or '"level": "ERROR"' in u:
-                        err += 1
-        except FileNotFoundError:
-            text = "Keine Logdatei gefunden."
-        except Exception as ex:
-            text = f"Fehler beim Lesen der Logdatei:\n{ex}"
-        else:
-            total = info + warn + err + dbg
-            text = (
-                f"Datei: {path}\n\n"
-                f"Gesamt: {total}\n"
-                f"Info:   {info}\n"
-                f"Warn:   {warn}\n"
-                f"Error:  {err}\n"
-                f"Debug:  {dbg}"
-            )
-
-        dlg = LogStatsDialog(text, self)
+        dlg = LogStatsDialog(path, self)
         dlg.setModal(False)
         dlg.setAttribute(Qt.WA_DeleteOnClose, True)
         dlg.show()
         self._child_windows.append(dlg)
 
     def _open_window_spy(self):
-        """
-        Fenster Spy nur ueber Einstellungen: wir rufen die MainWindow Methode auf,
-        damit der aktive Slot und die Attach Logik zentral bleiben.
-        """
-        p = self.parent()
-        if p is not None:
-            # bevorzugt _open_window_spy auf MainWindow
-            if hasattr(p, "_open_window_spy") and callable(getattr(p, "_open_window_spy")):
-                try:
-                    p._open_window_spy()
-                    return
-                except Exception:
-                    pass
-            # Fallback: open_window_spy falls anders benannt
-            if hasattr(p, "open_window_spy") and callable(getattr(p, "open_window_spy")):
-                try:
-                    p.open_window_spy()
-                    return
-                except Exception:
-                    pass
-        # wenn kein Parent oder Methode fehlt, tun wir nichts. Der Dialog bleibt offen.
+        if not _HAVE_SPY:
+            m = QMessageBox(self)
+            m.setWindowTitle("Nicht verfuegbar")
+            m.setText("Fenster Spy ist nicht verfuegbar")
+            m.setInformativeText("Das Modul window_spy konnte nicht geladen werden.")
+            m.setIcon(QMessageBox.Information)
+            m.exec()
+            return
+        try:
+            # Kompatibel zu unterschiedlichen Signaturen
+            try:
+                dlg = WindowSpyDialog(title="Fenster Spy", allow_system_windows=False, parent=self)
+            except TypeError:
+                dlg = WindowSpyDialog(self)
+            dlg.setModal(False)
+            dlg.setAttribute(Qt.WA_DeleteOnClose, True)
+            dlg.show()
+            self._child_windows.append(dlg)
+        except Exception as ex:
+            m = QMessageBox(self)
+            m.setWindowTitle("Fehler")
+            m.setText("Fenster Spy konnte nicht geoeffnet werden")
+            m.setInformativeText(str(ex))
+            m.setIcon(QMessageBox.Warning)
+            m.exec()
 
     def _request_quit(self):
-        self._result = {
-            "nav_orientation": self.nav_combo.currentText(),
-            "enable_hamburger": bool(self.hamburger_cb.isChecked()),
-            "placeholder_enabled": bool(self.placeholder_cb.isChecked()),
-            "placeholder_gif_path": self.gif_edit.text().strip(),
-            "theme": self.theme_combo.currentText(),
-            "logo_path": self.logo_edit.text().strip(),
-            "quit_requested": True,
-        }
-        self.accept()
+        m = QMessageBox(self)
+        m.setWindowTitle("Beenden bestaetigen")
+        m.setText("Moechtest du die Anwendung beenden")
+        m.setInformativeText("Ungespeicherte Aenderungen gehen moeglicherweise verloren.")
+        m.setIcon(QMessageBox.Warning)
+        m.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        m.setDefaultButton(QMessageBox.No)
+        res = m.exec()
+
+        if res == QMessageBox.Yes:
+            self._result = {
+                "nav_orientation": self.nav_combo.currentText(),
+                "enable_hamburger": bool(self.hamburger_cb.isChecked()),
+                "placeholder_enabled": bool(self.placeholder_cb.isChecked()),
+                "placeholder_gif_path": self.gif_edit.text().strip(),
+                "theme": self.theme_combo.currentText(),
+                "logo_path": self.logo_edit.text().strip(),
+                "quit_requested": True,
+            }
+            self.accept()
 
     def results(self) -> Dict[str, Any]:
         return self._result or {
