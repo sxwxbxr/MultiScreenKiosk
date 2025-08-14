@@ -1,5 +1,5 @@
-# modules/ui/main_window.py
 from typing import List
+import re
 
 from PySide6.QtCore import Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QShortcut, QKeySequence
@@ -46,18 +46,15 @@ class MainWindow(QMainWindow):
         self._allow_close = False
         self._sidebar_collapsed = False
 
-        # Quellen
         self.sources: List[SourceSpec] = cfg.sources[:] if cfg.sources else []
         self.num_sources = len(self.sources)
         self.current_page = 0
         self.page_size = 4
 
-        # Source Widgets
         self.source_widgets: List[QWidget] = []
         self.browser_services: List[BrowserService | None] = []
         self._create_source_widgets()
 
-        # Container
         self.single_host = QWidget(self)
         self.single_layout = QVBoxLayout(self.single_host)
         self.single_layout.setContentsMargins(0, 0, 0, 0)
@@ -69,10 +66,9 @@ class MainWindow(QMainWindow):
         self.grid_layout.setSpacing(0)
 
         self.mode_stack = QStackedWidget(self)
-        self.mode_stack.addWidget(self.single_host)  # 0
-        self.mode_stack.addWidget(self.grid)         # 1
+        self.mode_stack.addWidget(self.single_host)
+        self.mode_stack.addWidget(self.grid)
 
-        # Overlay Burger kompakt
         self.overlay_burger = QToolButton()
         self.overlay_burger.setObjectName("OverlayBurger")
         self.overlay_burger.setText("☰")
@@ -82,13 +78,9 @@ class MainWindow(QMainWindow):
         self.overlay_burger.setVisible(False)
         self.overlay_burger.clicked.connect(self._open_overlay_menu)
 
-        # Root und Sidebar
         self._build_root_and_sidebar()
-
-        # Theme anwenden
         self.apply_theme(self.cfg.ui.theme)
 
-        # Shortcuts
         for i in range(4):
             sc = QShortcut(QKeySequence(f"Ctrl+{i+1}"), self)
             sc.activated.connect(lambda idx=i: self._select_by_position(idx))
@@ -97,14 +89,11 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+Q"), self).activated.connect(self.on_toggle_mode)
         QShortcut(QKeySequence("F11"), self).activated.connect(self.toggle_kiosk)
 
-        # Services
         self._start_services()
 
-        # Startmodus
         self.apply_mode(self.state.mode)
         self.on_select_view(0 if self.num_sources == 0 else min(self.state.active_index, self.num_sources - 1))
 
-        # Watchdog
         self.reconnect_timer = QTimer(self)
         self.reconnect_timer.setInterval(5000)
         self.reconnect_timer.timeout.connect(self._tick_watchdogs)
@@ -329,9 +318,7 @@ class MainWindow(QMainWindow):
             self.sidebar.set_active_global_index(self.state.active_index)
 
             try:
-                from pathlib import Path
-                cfg_path = Path(__file__).resolve().parents[1] / "config.json"
-                save_config(self.cfg, str(cfg_path))
+                save_config(self.cfg)  # Standardpfad modules/config.json
             except Exception:
                 pass
 
@@ -342,46 +329,50 @@ class MainWindow(QMainWindow):
         dlg.show()
 
     def _show_log_stats(self):
-        # separate Statistik als nicht modales Fenster
         path = get_log_path()
+        lvl_re = re.compile(r"\b(DEBUG|INFO|WARNING|ERROR)\b")
+        json_re = re.compile(r'"level"\s*:\s*"(DEBUG|INFO|WARNING|ERROR)"', re.IGNORECASE)
+
         info = warn = err = dbg = 0
-        text = ""
+        total_lines = 0
         try:
             with open(path, "r", encoding="utf-8", errors="ignore") as f:
                 for line in f:
-                    u = line.upper()
-                    if " DEBUG " in u or u.startswith("DEBUG") or '"level": "DEBUG"' in u:
+                    total_lines += 1
+                    m = lvl_re.search(line)
+                    if not m:
+                        m = json_re.search(line)
+                    if not m:
+                        continue
+                    lv = m.group(1).upper()
+                    if lv == "DEBUG":
                         dbg += 1
-                    elif " INFO " in u or u.startswith("INFO") or '"level": "INFO"' in u:
+                    elif lv == "INFO":
                         info += 1
-                    elif " WARNING " in u or u.startswith("WARNING") or '"level": "WARNING"' in u:
+                    elif lv == "WARNING":
                         warn += 1
-                    elif " ERROR " in u or u.startswith("ERROR") or '"level": "ERROR"' in u:
+                    elif lv == "ERROR":
                         err += 1
-            total = info + warn + err + dbg
-            text = (
-                f"Datei: {path}\n\n"
-                f"Gesamt: {total}\n"
-                f"Info:   {info}\n"
-                f"Warn:   {warn}\n"
-                f"Error:  {err}\n"
-                f"Debug:  {dbg}"
-            )
         except FileNotFoundError:
-            text = "Keine Logdatei gefunden."
+            QMessageBox.information(self, "Log Statistik", "Keine Logdatei gefunden.")
+            return
         except Exception as ex:
-            text = f"Fehler beim Lesen der Logdatei:\n{ex}"
+            QMessageBox.warning(self, "Log Statistik", f"Fehler beim Lesen der Logdatei:\n{ex}")
+            return
 
-        viewer = LogViewer(self)
-        viewer.setWindowTitle("Log Statistik")
-        viewer.text_edit.setPlainText(text)
-        viewer.setModal(False)
-        viewer.setAttribute(Qt.WA_DeleteOnClose, True)
-        viewer.show()
+        QMessageBox.information(
+            self,
+            "Log Statistik",
+            f"Datei: {path}\n\n"
+            f"Zeilen gesamt: {total_lines}\n"
+            f"Info:   {info}\n"
+            f"Warn:   {warn}\n"
+            f"Error:  {err}\n"
+            f"Debug:  {dbg}"
+        )
 
     # ---------- Theme ----------
     def apply_theme(self, theme: str):
-        # globales Styling inkl. Overlay-Burger
         if theme == "light":
             base = """
                 QWidget { background: #fbfbfd; color: #1c1c1e; font-size: 13px; }
@@ -395,15 +386,11 @@ class MainWindow(QMainWindow):
                 QLineEdit { background: #ffffff; border:1px solid #e5e5ea; border-radius: 8px; padding:6px 8px; }
                 QCheckBox::indicator { width: 18px; height: 18px; border-radius: 4px; border:1px solid #d1d1d6; background:#fff; }
                 QCheckBox::indicator:checked { background:#0a84ff; border:1px solid #0a84ff; }
-            """
-            overlay = """
                 #OverlayBurger {
                     background: rgba(255,255,255,0.80);
                     border: 1px solid rgba(0,0,0,0.12);
-                    border-radius: 8px;
-                    padding: 0;
-                    font-size: 18px;
-                    min-width: 36px; min-height: 36px;
+                    border-radius: 8px; padding: 0;
+                    font-size: 18px; min-width: 36px; min-height: 36px;
                 }
                 #OverlayBurger:hover { background: rgba(255,255,255,0.95); }
                 #OverlayBurger:pressed { background: rgba(235,235,235,1.0); }
@@ -420,20 +407,16 @@ class MainWindow(QMainWindow):
                 QLineEdit { background: #12151c; border:1px solid #262b36; border-radius: 8px; padding:6px 8px; }
                 QCheckBox::indicator { width: 18px; height: 18px; border-radius: 4px; border:1px solid #3a4254; background:#141823; }
                 QCheckBox::indicator:checked { background:#3b82f6; border:1px solid #3b82f6; }
-            """
-            overlay = """
                 #OverlayBurger {
                     background: rgba(20,22,28,0.92);
                     border: 1px solid rgba(255,255,255,0.10);
-                    border-radius: 8px;
-                    padding: 0;
-                    font-size: 18px;
-                    min-width: 36px; min-height: 36px;
+                    border-radius: 8px; padding: 0;
+                    font-size: 18px; min-width: 36px; min-height: 36px;
                 }
                 #OverlayBurger:hover { background: rgba(26,29,36,0.98); }
                 #OverlayBurger:pressed { background: rgba(33,38,51,1.0); }
             """
-        self.setStyleSheet(base + overlay)
+        self.setStyleSheet(base)
 
     # ---------- Paging Helfer ----------
     def _page_delta(self, delta: int):
@@ -521,7 +504,6 @@ class MainWindow(QMainWindow):
         else:
             self.enter_kiosk()
 
-    # -------- Quit Handling --------
     def _confirm_and_quit(self):
         ans = QMessageBox.question(
             self, "Beenden",

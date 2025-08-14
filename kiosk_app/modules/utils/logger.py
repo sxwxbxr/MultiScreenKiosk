@@ -6,12 +6,11 @@ import os
 import queue
 import re
 import sys
-import threading
-from dataclasses import dataclass, asdict
+from collections import deque
+from dataclasses import dataclass
 from datetime import datetime
 from logging.handlers import QueueHandler, QueueListener, RotatingFileHandler
 from typing import Any, Deque, Dict, Optional, Tuple
-from collections import deque
 
 # Qt Bridge ist optional. Import im Try damit der Logger auch ohne Qt funktioniert.
 try:
@@ -52,7 +51,7 @@ class PlainFormatter(logging.Formatter):
     default_msec_format = '%s.%03d'
 
     def format(self, record: logging.LogRecord) -> str:
-        # zusätzliche Felder robust abfragen
+        # zusaetzliche Felder robust abfragen
         sid = getattr(record, "session", _session_id)
         src = getattr(record, "source", None)
         view = getattr(record, "view", None)
@@ -98,14 +97,9 @@ class SecretsFilter(logging.Filter):
         msg = record.getMessage()
         for pat in self.patterns:
             msg = pat.sub(r"\1=<redacted>", msg)
-        # setMessage geht nicht. Daher ueberschreiben wir record.msg wenn es ein string ist.
+        # setMessage gibt es nicht, daher record.msg anpassen wenn string
         if isinstance(record.msg, str):
             record.msg = msg
-        # kwargs durchgehen
-        if isinstance(getattr(record, "extra", None), dict):
-            for k in list(record.extra.keys()):
-                if any(k.lower() == key.lower() for key in [p.pattern.split("\\b")[1] for p in self.patterns]):
-                    record.extra[k] = "<redacted>"
         return True
 
 # ========= Memory und Qt Bridge =========
@@ -138,7 +132,6 @@ if _HAVE_QT:
         lineEmitted = Signal(str)
 
         def emit_line(self, text: str):
-            # Signal nur senden wenn eine Qt App laeuft
             if QCoreApplication.instance() is not None:
                 self.lineEmitted.emit(text)
 else:
@@ -157,6 +150,9 @@ def _default_log_dir() -> str:
         d = os.path.join(os.getcwd(), "logs")
     os.makedirs(d, exist_ok=True)
     return d
+
+def _parse_level(s: str) -> int:
+    return getattr(logging, str(s).upper(), logging.INFO)
 
 def init_logging(cfg: Optional[LoggingConfig]) -> None:
     """Initialisiert asynchrones Logging mit Rotation und optional JSON."""
@@ -232,14 +228,10 @@ def init_logging(cfg: Optional[LoggingConfig]) -> None:
         extra={"session": _session_id, "source": "logging", "view": None}
     )
 
-def _parse_level(s: str) -> int:
-    return getattr(logging, str(s).upper(), logging.INFO)
-
 # ========= Helpers fuer Aufrufer =========
 
 class _Adapter(logging.LoggerAdapter):
     def process(self, msg, kwargs):
-        # sichere Extras anreichern
         kwargs = kwargs or {}
         extra = kwargs.get("extra", {})
         if not isinstance(extra, dict):
@@ -256,12 +248,10 @@ def get_logger(name: str, **extra) -> logging.LoggerAdapter:
 def set_global_level(level: str) -> None:
     root = logging.getLogger()
     root.setLevel(_parse_level(level))
-    # QueueHandler haengt am Root, die Zielhandler bekommen Level ueber Listener nicht separat
     get_logger(__name__).info(f"runtime log level set to {level}", extra={"source": "logging"})
 
 def get_log_path() -> str:
     if _root_config is None:
-        # noch nicht initialisiert
         d = _default_log_dir()
         return os.path.join(d, "kiosk.log")
     d = _root_config.dir or _default_log_dir()
@@ -270,50 +260,22 @@ def get_log_path() -> str:
 # ========= Qt Message Handler =========
 
 def _install_qt_message_handler():
-    # Nur wenn Qt verfuegbar
     if not _HAVE_QT:
         return
     try:
-        from PySide6.QtCore import qInstallMessageHandler, QtMsgType  # type: ignore
+        from PySide6.QtCore import qInstallMessageHandler  # type: ignore
     except Exception:
         return
 
     log = get_logger("qt")
 
     def handler(msg_type, context, message):
-        # Mappe Qt Level auf Python Level
-        if msg_type == 0:      # QtDebugMsg
-            lvl = logging.DEBUG
-        elif msg_type == 1:    # QtInfoMsg
-            lvl = logging.INFO
-        elif msg_type == 2:    # QtWarningMsg
-            lvl = logging.WARNING
-        elif msg_type == 3:    # QtCriticalMsg
-            lvl = logging.ERROR
-        else:                  # QtFatalMsg
-            lvl = logging.CRITICAL
+        # 0=Debug,1=Info,2=Warning,3=Critical,4=Fatal
+        lvl_map = {0: logging.DEBUG, 1: logging.INFO, 2: logging.WARNING, 3: logging.ERROR, 4: logging.CRITICAL}
+        lvl = lvl_map.get(int(msg_type), logging.INFO)
         log.log(lvl, str(message), extra={"source": "qt"})
 
     try:
         qInstallMessageHandler(handler)
     except Exception:
         pass
-
-# ========= Dekorator fuer Exceptions =========
-
-def log_exceptions(logger: logging.LoggerAdapter, level: int = logging.ERROR):
-    """Dekorator der Exceptions loggt und erneut wirft."""
-    def deco(func):
-        def wrapper(*args, **kwargs):
-            try:
-                return func(*args, **kwargs)
-            except SystemExit:
-                raise
-            except KeyboardInterrupt:
-                logger.warning("interrupted", extra={"source": "exception"})
-                raise
-            except Exception:
-                logger.log(level, "uncaught exception in %s", func.__name__, exc_info=True, extra={"source": "exception"})
-                raise
-        return wrapper
-    return deco
