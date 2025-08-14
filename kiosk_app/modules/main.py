@@ -16,6 +16,15 @@ from modules.ui.main_window import MainWindow
 from modules.ui.setup_dialog import SetupDialog
 from modules.utils.config_loader import Config
 
+
+def default_cfg_path() -> Path:
+    if getattr(sys, "frozen", False):
+        # Pfad neben der EXE
+        return Path(sys.executable).resolve().parent / "config.json"
+    # Dev Modus wie bisher
+    return Path(__file__).resolve().parent / "config.json"
+
+
 def _dict_to_config(d: Dict[str, Any]) -> Config:
     # Hilfsparser fuer das In Memory Ergebnis
     from modules.utils.config_loader import _parse_sources, _parse_ui, _parse_kiosk
@@ -29,11 +38,12 @@ def _dict_to_config(d: Dict[str, Any]) -> Config:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="MultiScreen Kiosk")
-    default_cfg = str((Path(__file__).resolve().parent / "config.json"))
+    default_cfg = str(default_cfg_path())
     p.add_argument("--config", "-c", default=default_cfg, help="Pfad zur config.json")
     p.add_argument("--setup", action="store_true", help="Setup Dialog beim Start anzeigen")
     p.add_argument("--log-level", default=None, help="Log Level zB DEBUG INFO WARNING ERROR")
     return p.parse_args()
+
 
 
 def _write_config_json(path: Path, data: dict) -> None:
