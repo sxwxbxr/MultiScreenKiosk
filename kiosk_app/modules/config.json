@@ -2,22 +2,12 @@
   "sources": [
     {
       "type": "browser",
-      "name": "Google",
-      "url": "https://www.google.com"
-    },
-    {
-      "type": "browser",
-      "name": "ChatGPT",
-      "url": "https://chat.openai.com"
-    },
-    {
-      "type": "browser",
-      "name": "Proton",
-      "url": "https://mail.proton.me"
+      "name": "WCU",
+      "url": "https://www.google.com/"
     },
     {
       "type": "local",
-      "name": "Editor",
+      "name": "WCS",
       "launch_cmd": "D:/Telsonic/WCS/BIN200/Telsonic.TS.TFX.UI.App.exe",
       "args": "D:\\Telsonic\\WCS\\DATA200\\Config\\WCS.tfcon",
       "embed_mode": "native_window",

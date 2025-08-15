@@ -1,0 +1,34 @@
+name-template: 'MultiScreenKiosk $RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+change-template: '- $TITLE by @$AUTHOR in #$NUMBER'
+categories:
+  - title: 'Neu'
+    labels: ['feature', 'enhancement']
+  - title: 'Fix'
+    labels: ['bug', 'fix']
+  - title: 'Dokumentation'
+    labels: ['docs']
+  - title: 'Wartung'
+    labels: ['chore', 'refactor', 'deps']
+
+version-resolver:
+  major:
+    labels: ['major']
+  minor:
+    labels: ['minor', 'feature', 'enhancement']
+  patch:
+    labels: ['patch', 'bug', 'fix', 'docs', 'chore', 'refactor', 'deps']
+  default: patch
+
+template: |
+  ## Ueberblick
+  $CHANGES
+
+  ## Assets
+  * `MultiScreenKiosk.exe`
+  * `MultiScreenKiosk.zip`
+  * `config.example.json`
+
+  ## Hinweise
+  * Logs liegen unter `%LOCALAPPDATA%\MultiScreenKiosk\logs`
+  * Pro Start neue Logdatei `YYYYMMDD_N_Logfile.log`
