@@ -246,7 +246,7 @@ Create a shortcut to `MultiScreenKiosk.exe` and place it in:
 
 ## License
 
-MIT (or your preferred license). Replace this section with the actual license you choose.
+MIT
 
 ---
 
