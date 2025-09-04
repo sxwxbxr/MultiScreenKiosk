@@ -14,6 +14,7 @@ from modules.ui.browser_host import BrowserHostWidget
 from modules.ui.window_spy import WindowSpyDialog
 from modules.services.browser_services import BrowserService, make_webview
 from modules.services.local_app_service import LocalAppWidget
+from modules.ui.virtual_keyboard import OnScreenKeyboard, KeyboardFocusHandler
 from modules.utils.config_loader import Config, SourceSpec, save_config, DEFAULT_SHORTCUTS
 from modules.utils.logger import get_logger
 from modules.utils.i18n import tr, i18n
@@ -103,6 +104,13 @@ class MainWindow(QMainWindow):
         self.reconnect_timer.timeout.connect(self._tick_watchdogs)
         self.reconnect_timer.start()
 
+        # On-screen keyboard for touch interaction
+        self._keyboard = OnScreenKeyboard(self)
+        # ``KeyboardFocusHandler`` automatically shows or hides the keyboard
+        # depending on which widget currently has focus.
+        self._keyboard_handler = KeyboardFocusHandler(self._keyboard, self)
+        self._place_keyboard()
+
     # ---------- Root und Sidebar ----------
     def _build_root_and_sidebar(self):
         titles = [s.name for s in self.sources]
@@ -138,15 +146,23 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         self._place_overlay_burger()
+        self._place_keyboard()
 
     def resizeEvent(self, ev):
         super().resizeEvent(ev)
         self._place_overlay_burger()
+        self._place_keyboard()
 
     def _place_overlay_burger(self):
         margin = 8
         self.overlay_burger.move(margin, margin)
         self.overlay_burger.raise_()
+
+    def _place_keyboard(self):
+        if getattr(self, "_keyboard", None):
+            kb = self._keyboard
+            kb.move(max(0, (self.width() - kb.width()) // 2),
+                    self.height() - kb.height())
 
     def on_sidebar_collapsed_changed(self, collapsed: bool):
         self.set_sidebar_collapsed(collapsed)

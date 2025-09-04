@@ -1,3 +1,4 @@
+import os
 import threading
 import time
 import requests
@@ -5,10 +6,23 @@ import requests
 from PySide6.QtCore import QTimer, QObject, Signal
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtCore import QUrl
+from PySide6.QtWidgets import QApplication
 
 from modules.utils.logger import get_logger
 
+# When running in headless environments (e.g. unit tests) QtWebEngine normally
+# refuses to start as root or without a display server.  The minimal
+# environment variables below relax these restrictions so that the web view can
+# be instantiated for testing purposes.  They are harmless in regular GUI
+# execution where these variables may already be set by the host system.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
+os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--no-sandbox")
+
 def make_webview() -> QWebEngineView:
+    # Ensure a QApplication exists.  QtWebEngine widgets require an application
+    # instance, but unit tests may call this factory without creating one.
+    QApplication.instance() or QApplication([])
     w = QWebEngineView()
     w.setZoomFactor(1.0)
     return w
