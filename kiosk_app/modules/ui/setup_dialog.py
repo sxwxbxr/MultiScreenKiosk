@@ -184,6 +184,10 @@ class SetupDialog(QDialog):
         self.count_spin.setValue(initial_count)
         self.count_spin.valueChanged.connect(self._rebuild_rows)
         hl.addWidget(self.count_spin)
+
+        self.split_cb = QCheckBox("Splitscreen aktiv", self)
+        self.split_cb.setChecked(True)
+        hl.addWidget(self.split_cb)
         hl.addStretch(1)
 
         # Scrollbereich
@@ -288,6 +292,16 @@ class SetupDialog(QDialog):
         self.rows_layout.addStretch(1)
 
     def _prefill_from_cfg(self, cfg):
+        try:
+            ui = getattr(cfg, "ui", None)
+            val = getattr(ui, "split_enabled", True) if ui is not None else True
+        except Exception:
+            try:
+                val = cfg.get("ui", {}).get("split_enabled", True)
+            except Exception:
+                val = True
+        self.split_cb.setChecked(bool(val))
+
         sources = getattr(cfg, "sources", []) or []
         try:
             # falls dict
@@ -368,7 +382,8 @@ class SetupDialog(QDialog):
         new_cfg: Dict[str, Any] = {
             "sources": specs,
             "ui": {
-                "start_mode": _get(ui, "start_mode", "quad"),
+                "start_mode": "quad" if self.split_cb.isChecked() else "single",
+                "split_enabled": bool(self.split_cb.isChecked()),
                 "sidebar_width": _get(ui, "sidebar_width", 96),
                 "nav_orientation": _get(ui, "nav_orientation", "left"),
                 "show_setup_on_start": False,

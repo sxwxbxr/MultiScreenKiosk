@@ -42,6 +42,7 @@ class SourceSpec:
 @dataclass
 class UISettings:
     start_mode: str = "quad"                 # "single" oder "quad"
+    split_enabled: bool = True               # Splitscreen erlauben
     sidebar_width: int = 96
     nav_orientation: str = "left"            # "left" oder "top"
     show_setup_on_start: bool = False
@@ -225,6 +226,7 @@ def _parse_ui(data: Dict[str, Any]) -> UISettings:
     ui = data.get("ui") or {}
     return UISettings(
         start_mode=_safe_str(ui.get("start_mode") or "quad"),
+        split_enabled=_as_bool(ui, "split_enabled", True),
         sidebar_width=_as_int(ui, "sidebar_width", 96),
         nav_orientation=_safe_str(ui.get("nav_orientation") or "left"),
         show_setup_on_start=_as_bool(ui, "show_setup_on_start", False),
