@@ -98,6 +98,7 @@ class LanguageManager(QObject):
                 "Overwrite config": "Overwrite config",
                 "Invalid": "Invalid",
                 "Please provide at least one valid source.": "Please provide at least one valid source.",
+                "Source {num}": "Source {num}",
             },
             "de": {
                 "Settings": "Einstellungen",
@@ -177,6 +178,7 @@ class LanguageManager(QObject):
                 "Overwrite config": "Config überschreiben",
                 "Invalid": "Ungültig",
                 "Please provide at least one valid source.": "Bitte mindestens eine gültige Quelle angeben.",
+                "Source {num}": "Quelle {num}",
             },
         }
 
