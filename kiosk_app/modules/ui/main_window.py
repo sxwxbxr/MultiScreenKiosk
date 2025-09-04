@@ -1,7 +1,7 @@
 from typing import List
 
-from PySide6.QtCore import Qt, QTimer, Signal, Slot
-from PySide6.QtGui import QShortcut, QKeySequence
+from PySide6.QtCore import Qt, QTimer, Signal, Slot, QEvent
+from PySide6.QtGui import QShortcut, QKeySequence, QDrag, QMimeData
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QStackedWidget,
     QGridLayout, QLabel, QApplication, QToolButton, QMenu, QMessageBox
@@ -30,6 +30,72 @@ def _attach(widget: QWidget, host_layout):
     widget.setParent(host_layout.parentWidget())
     host_layout.addWidget(widget)
     widget.show()
+
+
+class _DraggablePane(QWidget):
+    """Wrapper fuer ein Quell-Widget mit Drag-Handle zum Neuordnen."""
+
+    def __init__(self, index: int, child: QWidget, swap_cb, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.index = index
+        self._swap_cb = swap_cb
+        self._child = child
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(child)
+        self.setAcceptDrops(True)
+
+        # Kleiner Drag-Handle oben links
+        self.handle = QToolButton(self)
+        self.handle.setText("⇅")
+        self.handle.setFixedSize(16, 16)
+        self.handle.move(2, 2)
+        self.handle.setStyleSheet("background: rgba(0,0,0,0.4); color: white; border: 0;")
+        self.handle.installEventFilter(self)
+        self.handle.raise_()
+        self._drag_pos = None
+
+    def eventFilter(self, obj, ev):
+        if obj is self.handle:
+            if ev.type() == QEvent.MouseButtonPress and ev.button() == Qt.LeftButton:
+                self._drag_pos = ev.position().toPoint()
+                return True
+            if ev.type() == QEvent.MouseMove and self._drag_pos is not None and ev.buttons() & Qt.LeftButton:
+                if (ev.position().toPoint() - self._drag_pos).manhattanLength() >= QApplication.startDragDistance():
+                    drag = QDrag(self)
+                    mime = QMimeData()
+                    mime.setData("application/x-pane-index", str(self.index).encode())
+                    drag.setMimeData(mime)
+                    drag.exec(Qt.MoveAction)
+                    self._drag_pos = None
+                return True
+            if ev.type() == QEvent.MouseButtonRelease:
+                self._drag_pos = None
+                return True
+        return super().eventFilter(obj, ev)
+
+    # Drop target
+    def dragEnterEvent(self, ev):
+        if ev.mimeData().hasFormat("application/x-pane-index"):
+            ev.acceptProposedAction()
+
+    def dropEvent(self, ev):
+        try:
+            src = int(bytes(ev.mimeData().data("application/x-pane-index")).decode())
+        except Exception:
+            return
+        if src != self.index:
+            self._swap_cb(src, self.index)
+        ev.acceptProposedAction()
+
+    # Detach child widget when wrapper is destroyed
+    def take_widget(self):
+        if self._child is not None:
+            w = self._child
+            self._child = None
+            w.setParent(None)
+            return w
+        return None
 
 class MainWindow(QMainWindow):
     request_quit = Signal()
@@ -245,20 +311,23 @@ class MainWindow(QMainWindow):
 
     def _attach_quad_page(self, page: int):
         self.current_page = page
+        # Bestehende Wrapper entfernen und Widgets abkoppeln
         while self.grid_layout.count():
             it = self.grid_layout.takeAt(0)
             w = it.widget()
+            if isinstance(w, _DraggablePane):
+                w.take_widget()
             if w:
-                w.setParent(None)
+                w.deleteLater()
 
         start = page * self.page_size
-        items: List[QWidget] = []
+        indices: List[int] = []
         for i in range(4):
             idx = start + i
             if idx < self.num_sources:
-                items.append(self.source_widgets[idx])
+                indices.append(idx)
 
-        n = len(items)
+        n = len(indices)
 
         for r in range(2):
             self.grid_layout.setRowStretch(r, 0)
@@ -275,25 +344,54 @@ class MainWindow(QMainWindow):
             self.grid_layout.setColumnStretch(1, 1)
             return
 
+        wrappers = [
+            _DraggablePane(idx, self.source_widgets[idx], self._swap_panes, self.grid)
+            for idx in indices
+        ]
+
         if n == 1:
-            self.grid_layout.addWidget(items[0], 0, 0, 2, 2)
+            self.grid_layout.addWidget(wrappers[0], 0, 0, 2, 2)
         elif n == 2:
-            self.grid_layout.addWidget(items[0], 0, 0, 2, 1)
-            self.grid_layout.addWidget(items[1], 0, 1, 2, 1)
+            self.grid_layout.addWidget(wrappers[0], 0, 0, 2, 1)
+            self.grid_layout.addWidget(wrappers[1], 0, 1, 2, 1)
         elif n == 3:
-            self.grid_layout.addWidget(items[0], 0, 0, 1, 1)
-            self.grid_layout.addWidget(items[1], 0, 1, 1, 1)
-            self.grid_layout.addWidget(items[2], 1, 0, 1, 2)
+            self.grid_layout.addWidget(wrappers[0], 0, 0, 1, 1)
+            self.grid_layout.addWidget(wrappers[1], 0, 1, 1, 1)
+            self.grid_layout.addWidget(wrappers[2], 1, 0, 1, 2)
         else:
-            self.grid_layout.addWidget(items[0], 0, 0)
-            self.grid_layout.addWidget(items[1], 0, 1)
-            self.grid_layout.addWidget(items[2], 1, 0)
-            self.grid_layout.addWidget(items[3], 1, 1)
+            self.grid_layout.addWidget(wrappers[0], 0, 0)
+            self.grid_layout.addWidget(wrappers[1], 0, 1)
+            self.grid_layout.addWidget(wrappers[2], 1, 0)
+            self.grid_layout.addWidget(wrappers[3], 1, 1)
 
         self.grid_layout.setRowStretch(0, 1)
         self.grid_layout.setRowStretch(1, 1)
         self.grid_layout.setColumnStretch(0, 1)
         self.grid_layout.setColumnStretch(1, 1)
+
+    def _swap_panes(self, a: int, b: int):
+        """Zwei Quellen vertauschen und direkt neu zeichnen."""
+        if a == b or not (0 <= a < self.num_sources and 0 <= b < self.num_sources):
+            return
+        self.sources[a], self.sources[b] = self.sources[b], self.sources[a]
+        self.source_widgets[a], self.source_widgets[b] = self.source_widgets[b], self.source_widgets[a]
+        self.browser_services[a], self.browser_services[b] = self.browser_services[b], self.browser_services[a]
+        try:
+            self.cfg.sources = self.sources[:]
+            save_config(self.cfg)
+        except Exception:
+            pass
+        if self.state.active_index == a:
+            self.state.active_index = b
+        elif self.state.active_index == b:
+            self.state.active_index = a
+        if getattr(self, "sidebar", None):
+            self.sidebar.set_titles([s.name for s in self.sources])
+            self.sidebar.set_active_global_index(self.state.active_index)
+        if self.state.mode == ViewMode.SINGLE:
+            self._attach_single(self.state.active_index)
+        else:
+            self._attach_quad_page(self.current_page)
 
     # ---------- Einstellungen ----------
     def open_settings(self):
