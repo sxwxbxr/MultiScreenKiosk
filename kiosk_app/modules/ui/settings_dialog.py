@@ -3,15 +3,18 @@ from typing import Optional, Dict, Any, List
 
 import os
 from PySide6.QtCore import Qt, QPoint, QTimer
+from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QComboBox, QCheckBox, QLineEdit, QFileDialog, QTextEdit, QMessageBox
+    QComboBox, QCheckBox, QLineEdit, QFileDialog, QTextEdit, QMessageBox,
+    QKeySequenceEdit
 )
 
 # Log Viewer und Log Pfad
 from modules.ui.log_viewer import LogViewer
 from modules.utils.logger import get_log_path, get_logger
 from modules.utils.i18n import tr, i18n
+from modules.utils.config_loader import DEFAULT_SHORTCUTS
 
 # Fenster Spy optional importieren
 try:
@@ -133,6 +136,7 @@ class SettingsDialog(QDialog):
         "placeholder_gif_path": str,
         "theme": str,
         "logo_path": str,
+        "shortcuts": Dict[str, str],
         "quit_requested": bool
       }
     """
@@ -145,6 +149,7 @@ class SettingsDialog(QDialog):
                  theme: str,
                  logo_path: str,
                  split_enabled: bool,
+                 shortcuts: Optional[Dict[str, str]] = None,
                  parent: Optional[QWidget] = None):
         super().__init__(parent)
 
@@ -238,12 +243,35 @@ class SettingsDialog(QDialog):
         row5.addWidget(self.logo_edit, 1)
         row5.addWidget(self.btn_browse_logo)
 
+        # Shortcuts
+        self.lbl_shortcuts = QLabel("", self)
+        sc_container = QVBoxLayout()
+        self.shortcut_edits: Dict[str, QKeySequenceEdit] = {}
+        self.shortcut_labels: Dict[str, QLabel] = {}
+        sc_data = shortcuts or DEFAULT_SHORTCUTS
+        sc_order = [
+            "select_1", "select_2", "select_3", "select_4",
+            "next_page", "prev_page", "toggle_mode", "toggle_kiosk",
+        ]
+        for key in sc_order:
+            row_sc = QHBoxLayout()
+            lbl = QLabel("", self)
+            row_sc.addWidget(lbl)
+            edit = QKeySequenceEdit(self)
+            edit.setKeySequence(QKeySequence(sc_data.get(key, DEFAULT_SHORTCUTS.get(key, ""))))
+            row_sc.addWidget(edit, 1)
+            sc_container.addLayout(row_sc)
+            self.shortcut_edits[key] = edit
+            self.shortcut_labels[key] = lbl
+
         body_l.addLayout(row1)
         body_l.addLayout(row2)
         body_l.addLayout(row3)
         body_l.addLayout(row_lang)
         body_l.addLayout(row4)
         body_l.addLayout(row5)
+        body_l.addWidget(self.lbl_shortcuts)
+        body_l.addLayout(sc_container)
         self.info_lbl = None
         if not split_enabled:
             self.info_lbl = QLabel("", self)
@@ -293,6 +321,19 @@ class SettingsDialog(QDialog):
 
     # ------- Actions -------
     def _accept_save(self):
+        sc_map: Dict[str, str] = {}
+        for key, edit in self.shortcut_edits.items():
+            seq = edit.keySequence().toString(QKeySequence.NativeText).strip()
+            if seq:
+                sc_map[key] = seq
+        seqs = list(sc_map.values())
+        if len(seqs) != len(set(seqs)):
+            QMessageBox.warning(self, tr("Shortcut conflict"), tr("Shortcuts must be unique."))
+            return
+
+        merged = DEFAULT_SHORTCUTS.copy()
+        merged.update(sc_map)
+
         self._result = {
             "nav_orientation": self.nav_combo.currentData(),
             "enable_hamburger": bool(self.hamburger_cb.isChecked()),
@@ -301,6 +342,7 @@ class SettingsDialog(QDialog):
             "theme": self.theme_combo.currentData(),
             "language": self.language_combo.currentData(),
             "logo_path": self.logo_edit.text().strip(),
+            "shortcuts": merged,
             "quit_requested": False,
         }
         self.accept()
@@ -394,7 +436,18 @@ class SettingsDialog(QDialog):
             self.accept()
 
     def results(self) -> Dict[str, Any]:
-        return self._result or {
+        if self._result:
+            return self._result
+
+        sc_map: Dict[str, str] = {}
+        for key, edit in self.shortcut_edits.items():
+            seq = edit.keySequence().toString(QKeySequence.NativeText).strip()
+            if seq:
+                sc_map[key] = seq
+        merged = DEFAULT_SHORTCUTS.copy()
+        merged.update(sc_map)
+
+        return {
             "nav_orientation": self.nav_combo.currentData(),
             "enable_hamburger": bool(self.hamburger_cb.isChecked()),
             "placeholder_enabled": bool(self.placeholder_cb.isChecked()),
@@ -402,6 +455,7 @@ class SettingsDialog(QDialog):
             "theme": self.theme_combo.currentData(),
             "language": self.language_combo.currentData(),
             "logo_path": self.logo_edit.text().strip(),
+            "shortcuts": merged,
             "quit_requested": False,
         }
 
@@ -468,6 +522,19 @@ class SettingsDialog(QDialog):
         self.lbl_logo.setText(tr("Logo path"))
         self.logo_edit.setPlaceholderText(tr("Path to logo"))
         self.btn_browse_logo.setText(tr("Browse"))
+        self.lbl_shortcuts.setText(tr("Shortcuts"))
+        names = {
+            "select_1": tr("View 1"),
+            "select_2": tr("View 2"),
+            "select_3": tr("View 3"),
+            "select_4": tr("View 4"),
+            "next_page": tr("Next page"),
+            "prev_page": tr("Previous page"),
+            "toggle_mode": tr("Toggle mode"),
+            "toggle_kiosk": tr("Toggle kiosk"),
+        }
+        for key, lbl in self.shortcut_labels.items():
+            lbl.setText(names.get(key, key))
         if self.info_lbl is not None:
             self.info_lbl.setText(tr("Note: Split screen is disabled. Switch via the sidebar, Ctrl+Q is inactive."))
         self.btn_logs.setText(tr("Logs"))

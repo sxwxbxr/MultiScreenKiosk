@@ -14,7 +14,7 @@ from modules.ui.browser_host import BrowserHostWidget
 from modules.ui.window_spy import WindowSpyDialog
 from modules.services.browser_services import BrowserService, make_webview
 from modules.services.local_app_service import LocalAppWidget
-from modules.utils.config_loader import Config, SourceSpec, save_config
+from modules.utils.config_loader import Config, SourceSpec, save_config, DEFAULT_SHORTCUTS
 from modules.utils.logger import get_logger
 from modules.utils.i18n import tr, i18n
 
@@ -88,14 +88,7 @@ class MainWindow(QMainWindow):
         self.retranslate_ui()
 
         # Shortcuts
-        for i in range(4):
-            sc = QShortcut(QKeySequence(f"Ctrl+{i+1}"), self)
-            sc.activated.connect(lambda idx=i: self._select_by_position(idx))
-        QShortcut(QKeySequence("Ctrl+Right"), self).activated.connect(lambda: self._page_delta(+1))
-        QShortcut(QKeySequence("Ctrl+Left"), self).activated.connect(lambda: self._page_delta(-1))
-        if self.cfg.ui.split_enabled:
-            QShortcut(QKeySequence("Ctrl+Q"), self).activated.connect(self.on_toggle_mode)
-        QShortcut(QKeySequence("F11"), self).activated.connect(self.toggle_kiosk)
+        self._setup_shortcuts()
 
         # Services
         self._start_services()
@@ -312,6 +305,7 @@ class MainWindow(QMainWindow):
             theme=self.cfg.ui.theme,
             logo_path=self.cfg.ui.logo_path,
             split_enabled=self.cfg.ui.split_enabled,
+            shortcuts=self.cfg.ui.shortcuts,
             parent=self
         )
         if dlg.exec():
@@ -334,6 +328,7 @@ class MainWindow(QMainWindow):
             self.cfg.ui.placeholder_gif_path = res["placeholder_gif_path"]
             self.cfg.ui.language = res["language"]
             self.cfg.ui.logo_path = res["logo_path"]
+            self.cfg.ui.shortcuts = res.get("shortcuts", self.cfg.ui.shortcuts)
 
             # Anwenden
             self.apply_theme(self.cfg.ui.theme)
@@ -352,10 +347,42 @@ class MainWindow(QMainWindow):
             self.sidebar.set_titles([s.name for s in self.sources])
             self.sidebar.set_active_global_index(self.state.active_index)
 
+            self._setup_shortcuts()
+
             try:
                 save_config(self.cfg)
             except Exception:
                 pass
+
+    def _setup_shortcuts(self):
+        # vorhandene Shortcuts entfernen
+        for sc in getattr(self, "_shortcuts", {}).values():
+            try:
+                sc.setParent(None)
+            except Exception:
+                pass
+        self._shortcuts = {}
+
+        mapping = DEFAULT_SHORTCUTS.copy()
+        try:
+            mapping.update({k: v for k, v in self.cfg.ui.shortcuts.items() if v})
+        except Exception:
+            pass
+
+        def _add(action: str, seq: str | None, handler):
+            if not seq:
+                return
+            sc = QShortcut(QKeySequence(seq), self)
+            sc.activated.connect(handler)
+            self._shortcuts[action] = sc
+
+        for i in range(4):
+            _add(f"select_{i+1}", mapping.get(f"select_{i+1}"), lambda i=i: self._select_by_position(i))
+        _add("next_page", mapping.get("next_page"), lambda: self._page_delta(+1))
+        _add("prev_page", mapping.get("prev_page"), lambda: self._page_delta(-1))
+        if self.cfg.ui.split_enabled:
+            _add("toggle_mode", mapping.get("toggle_mode"), self.on_toggle_mode)
+        _add("toggle_kiosk", mapping.get("toggle_kiosk"), self.toggle_kiosk)
 
     def retranslate_ui(self):
         self.overlay_burger.setToolTip(tr("Menu"))

@@ -17,7 +17,7 @@ Switch between single view and a 2×2 grid, embed websites and native Windows ap
 * **First-run Setup** dialog to define sources (names, URLs, EXE + args, title/class regex)
 * **Settings** inside the app: theme (light/dark), logo, placeholder GIF, orientation, hamburger
 * **Placeholders** while web views load (optional custom GIF)
-* **Keyboard**: Ctrl+1…4 select view, Ctrl+Q switch layout, F11 kiosk, Shift+Close to exit in kiosk
+* **Keyboard**: Configurable shortcuts (defaults: Ctrl+1…4 select view, Ctrl+Q switch layout, F11 kiosk, Shift+Close to exit in kiosk)
 * **Logging tools**
 
   * Per-launch log file **`YYYYMMDD_N_Logfile.log`**
@@ -166,6 +166,8 @@ Examples:
 ---
 
 ## Shortcuts
+
+Default mappings (customizable in Settings):
 
 * **Ctrl+1…4**: activate pane
 * **Ctrl+Q**: switch Single ↔ Quad

@@ -9,6 +9,18 @@ from typing import Any, Dict, List, Optional
 
 log = logging.getLogger(__name__)
 
+# Standard Tastaturkuerzel
+DEFAULT_SHORTCUTS: Dict[str, str] = {
+    "select_1": "Ctrl+1",
+    "select_2": "Ctrl+2",
+    "select_3": "Ctrl+3",
+    "select_4": "Ctrl+4",
+    "next_page": "Ctrl+Right",
+    "prev_page": "Ctrl+Left",
+    "toggle_mode": "Ctrl+Q",
+    "toggle_kiosk": "F11",
+}
+
 # =========================
 # Datenklassen
 # =========================
@@ -52,6 +64,7 @@ class UISettings:
     theme: str = "light"                     # "light" oder "dark"
     language: str = ""                       # z.B. "de" oder "en"; leer = Systemstandard
     logo_path: str = ""
+    shortcuts: Dict[str, str] = field(default_factory=lambda: DEFAULT_SHORTCUTS.copy())
 
 
 @dataclass
@@ -102,6 +115,7 @@ __all__ = [
     "_parse_ui",
     "_parse_kiosk",
     "_parse_logging",
+    "DEFAULT_SHORTCUTS",
 ]
 
 # =========================
@@ -225,6 +239,17 @@ def _parse_sources(data: Dict[str, Any]) -> List[SourceSpec]:
 
 def _parse_ui(data: Dict[str, Any]) -> UISettings:
     ui = data.get("ui") or {}
+    sc = ui.get("shortcuts")
+    shortcuts: Dict[str, str] = {}
+    if isinstance(sc, dict):
+        for k, v in sc.items():
+            try:
+                shortcuts[str(k)] = _safe_str(v)
+            except Exception:
+                continue
+    merged = DEFAULT_SHORTCUTS.copy()
+    merged.update({k: v for k, v in shortcuts.items() if v})
+
     return UISettings(
         start_mode=_safe_str(ui.get("start_mode") or "quad"),
         split_enabled=_as_bool(ui, "split_enabled", True),
@@ -237,6 +262,7 @@ def _parse_ui(data: Dict[str, Any]) -> UISettings:
         theme=_safe_str(ui.get("theme") or "light"),
         language=_safe_str(ui.get("language") or ""),
         logo_path=_safe_str(ui.get("logo_path") or ""),
+        shortcuts=merged,
     )
 
 

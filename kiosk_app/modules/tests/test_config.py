@@ -1,4 +1,4 @@
-from utils.config_loader import load_config, Config
+from utils.config_loader import load_config, Config, DEFAULT_SHORTCUTS
 from pathlib import Path
 import json
 import tempfile
@@ -28,3 +28,15 @@ def test_invalid_urls(tmp_path: Path):
         load_config(p)
     except Exception as e:
         assert "http" in str(e)
+
+
+def test_shortcuts_override(tmp_path: Path):
+    cfg_data = {
+        "sources": [{"type": "browser", "name": "A", "url": "http://example.com"}],
+        "ui": {"shortcuts": {"toggle_kiosk": "Ctrl+F"}},
+    }
+    p = tmp_path / "config.json"
+    p.write_text(json.dumps(cfg_data))
+    cfg = load_config(p)
+    assert cfg.ui.shortcuts["toggle_kiosk"] == "Ctrl+F"
+    assert cfg.ui.shortcuts["select_1"] == DEFAULT_SHORTCUTS["select_1"]
