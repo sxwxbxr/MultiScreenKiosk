@@ -1,17 +1,23 @@
 from typing import List
 from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QRect
 from PySide6.QtWidgets import QWidget, QStackedWidget, QGridLayout, QVBoxLayout, QLabel, QSizePolicy
+from modules.utils.i18n import tr, i18n
 
 class LoadingOverlay(QWidget):
-    def __init__(self, text="Lade...", parent=None):
+    def __init__(self, text=None, parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignCenter)
-        self.label = QLabel(text, self)
+        self.label = QLabel("", self)
         self.label.setStyleSheet("font-size:18px; background: rgba(0,0,0,0.4); color: white; padding:8px; border-radius:8px;")
         layout.addWidget(self.label)
+        i18n.language_changed.connect(lambda _l: self._apply_translations())
+        self._apply_translations(text)
         self.hide()
+
+    def _apply_translations(self, explicit=None):
+        self.label.setText(explicit if explicit is not None else tr("Loading..."))
 
 class ViewContainer(QWidget):
     """Container fuer eine einzelne Ansicht mit Overlay"""

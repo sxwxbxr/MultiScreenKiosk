@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from modules.utils.logger import get_log_path, get_log_bridge
+from modules.utils.i18n import tr, i18n
 
 _LEVELS = ["ALLE", "DEBUG", "INFO", "WARNING", "ERROR"]
 
@@ -20,7 +21,7 @@ class LogViewer(QDialog):
     """Einfacher Log Viewer mit Filtern und Live Update."""
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Logs")
+        self.setWindowTitle(tr("Logs"))
         self.setModal(False)
         self.setMinimumSize(800, 480)
 
@@ -31,25 +32,26 @@ class LogViewer(QDialog):
 
         # Kopfzeile mit Filtern
         top = QHBoxLayout()
-        top.addWidget(QLabel("Level"))
+        self.lbl_level = QLabel("", self)
+        top.addWidget(self.lbl_level)
         self.level_combo = QComboBox(self)
         self.level_combo.addItems(_LEVELS)
         self.level_combo.setCurrentIndex(0)
 
         self.search_edit = QLineEdit(self)
-        self.search_edit.setPlaceholderText("Filter Text")
+        self.search_edit.setPlaceholderText("")
 
-        self.regex_cb = QCheckBox("Regex", self)
-        self.case_cb = QCheckBox("Gross Kleinschreibung", self)
+        self.regex_cb = QCheckBox("", self)
+        self.case_cb = QCheckBox("", self)
 
-        self.auto_cb = QCheckBox("Auto Scroll", self)
+        self.auto_cb = QCheckBox("", self)
         self.auto_cb.setChecked(True)
 
-        self.pause_cb = QCheckBox("Pause", self)
+        self.pause_cb = QCheckBox("", self)
 
-        self.btn_refresh = QPushButton("Neu laden", self)
-        self.btn_clear = QPushButton("Datei leeren", self)
-        self.btn_open = QPushButton("Datei oeffnen", self)
+        self.btn_refresh = QPushButton("", self)
+        self.btn_clear = QPushButton("", self)
+        self.btn_open = QPushButton("", self)
 
         for w in [self.level_combo, self.search_edit, self.regex_cb, self.case_cb, self.auto_cb, self.pause_cb]:
             top.addWidget(w)
@@ -76,6 +78,9 @@ class LogViewer(QDialog):
         self.btn_refresh.clicked.connect(self._reload_all)
         self.btn_clear.clicked.connect(self._clear_file)
         self.btn_open.clicked.connect(self._open_external)
+
+        i18n.language_changed.connect(lambda _l: self._apply_translations())
+        self._apply_translations()
 
         # Timer Polling
         self._timer = QTimer(self)
@@ -104,7 +109,7 @@ class LogViewer(QDialog):
     def _open_external(self):
         path = self._path
         if not os.path.isfile(path):
-            QMessageBox.information(self, "Info", "Keine Logdatei gefunden")
+            QMessageBox.information(self, tr("Info"), tr("No log file found"))
             return
         try:
             # Dateidialog nur zum schnellen Kopieren oeffnen
@@ -121,7 +126,7 @@ class LogViewer(QDialog):
             self._file_pos = 0
             self.view.clear()
         except Exception as ex:
-            QMessageBox.warning(self, "Fehler", f"Logdatei konnte nicht geleert werden:\n{ex}")
+            QMessageBox.warning(self, tr("Info"), tr("The log file could not be cleared:\n{ex}", ex=ex))
 
     def _reload_all(self):
         """Komplette Datei neu laden und anzeigen."""
@@ -235,3 +240,15 @@ class LogViewer(QDialog):
         if '"LEVEL": "ERROR"' in u or " ERROR " in u or u.startswith("ERROR"):
             return "ERROR"
         return "INFO"  # neutrale Vorgabe
+
+    def _apply_translations(self):
+        self.setWindowTitle(tr("Logs"))
+        self.lbl_level.setText(tr("Level"))
+        self.search_edit.setPlaceholderText(tr("Filter text"))
+        self.regex_cb.setText(tr("Regex"))
+        self.case_cb.setText(tr("Case sensitive"))
+        self.auto_cb.setText(tr("Auto Scroll"))
+        self.pause_cb.setText(tr("Pause"))
+        self.btn_refresh.setText(tr("Reload"))
+        self.btn_clear.setText(tr("Clear file"))
+        self.btn_open.setText(tr("Open file"))

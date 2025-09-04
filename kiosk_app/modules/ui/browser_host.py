@@ -5,6 +5,8 @@ from PySide6.QtGui import QMovie
 from PySide6.QtWidgets import QWidget, QStackedLayout, QLabel
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
+from modules.utils.i18n import tr, i18n
+
 
 class BrowserHostWidget(QWidget):
     """Container fuer Browser mit Platzhalter. Index 0 = Placeholder, 1 = WebView."""
@@ -18,7 +20,7 @@ class BrowserHostWidget(QWidget):
         self.stack.setContentsMargins(0, 0, 0, 0)
         self.stack.setSpacing(0)
 
-        self.placeholder = QLabel("Lade ...", self)
+        self.placeholder = QLabel("", self)
         self.placeholder.setAlignment(Qt.AlignCenter)
 
         self.movie: Optional[QMovie] = None
@@ -35,6 +37,9 @@ class BrowserHostWidget(QWidget):
         dummy = QWidget(self)  # wird spaeter ersetzt
         self.stack.addWidget(dummy)
         self.stack.setCurrentIndex(0 if self._placeholder_enabled else 1)
+
+        i18n.language_changed.connect(lambda _l: self._apply_translations())
+        self._apply_translations()
 
     def set_view(self, view: QWebEngineView):
         self._view = view
@@ -68,6 +73,10 @@ class BrowserHostWidget(QWidget):
                     self.placeholder.setMovie(self.movie)
                     self.movie.start()
                 else:
-                    self.placeholder.setText("Lade ...")
+                    self.placeholder.setText(tr("Loading..."))
             except Exception:
-                self.placeholder.setText("Lade ...")
+                self.placeholder.setText(tr("Loading..."))
+
+    def _apply_translations(self):
+        if not self.movie:
+            self.placeholder.setText(tr("Loading..."))

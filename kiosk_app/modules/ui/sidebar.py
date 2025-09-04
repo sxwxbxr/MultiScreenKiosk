@@ -7,6 +7,8 @@ from PySide6.QtWidgets import (
     QFrame, QSizePolicy, QMenu
 )
 
+from modules.utils.i18n import tr, i18n
+
 
 class RotatableLogoWidget(QWidget):
     """Logo Widget. Dreht das Bild bei Ausrichtung 'left' um 90 Grad.
@@ -102,6 +104,8 @@ class Sidebar(QWidget):
         self.setObjectName("Sidebar")
         self._build_ui()
         self._refresh_page_buttons()
+        i18n.language_changed.connect(lambda _l: self.retranslate_ui())
+        self.retranslate_ui()
 
     # ---------- interne Helfer ----------
     def _divider(self):
@@ -140,7 +144,7 @@ class Sidebar(QWidget):
 
         self.btn_burger = QToolButton(self)
         self.btn_burger.setText("☰")
-        self.btn_burger.setToolTip("Menue")
+        self.btn_burger.setToolTip("")
         self.btn_burger.clicked.connect(self._on_burger_click)
         self.btn_burger.setVisible(self._enable_hamburger)
         header.addWidget(self.btn_burger)
@@ -153,7 +157,7 @@ class Sidebar(QWidget):
 
         self.btn_settings = QToolButton(self)
         self.btn_settings.setText("⚙")
-        self.btn_settings.setToolTip("Einstellungen")
+        self.btn_settings.setToolTip("")
         self.btn_settings.clicked.connect(self.request_settings.emit)
         header.addWidget(self.btn_settings)
 
@@ -194,7 +198,7 @@ class Sidebar(QWidget):
         root.addLayout(row_buttons)
 
         # Zeile 3: Switch vollbreit
-        self.btn_toggle = QPushButton("Switch", self)
+        self.btn_toggle = QPushButton("", self)
         self.btn_toggle.setToolTip("Strg+Q")
         self.btn_toggle.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.btn_toggle.clicked.connect(self.toggle_mode.emit)
@@ -214,7 +218,7 @@ class Sidebar(QWidget):
 
         self.btn_burger = QToolButton(self)
         self.btn_burger.setText("☰")
-        self.btn_burger.setToolTip("Menue")
+        self.btn_burger.setToolTip("")
         self.btn_burger.clicked.connect(self._on_burger_click)
         self.btn_burger.setVisible(self._enable_hamburger)
         header.addWidget(self.btn_burger)
@@ -223,7 +227,7 @@ class Sidebar(QWidget):
 
         self.btn_settings = QToolButton(self)
         self.btn_settings.setText("⚙")
-        self.btn_settings.setToolTip("Einstellungen")
+        self.btn_settings.setToolTip("")
         self.btn_settings.clicked.connect(self.request_settings.emit)
         header.addWidget(self.btn_settings)
 
@@ -262,7 +266,7 @@ class Sidebar(QWidget):
             self.buttons_layout.addWidget(btn)
         layout.addWidget(self.buttons_wrap)
 
-        self.btn_toggle = QPushButton("Switch", self)
+        self.btn_toggle = QPushButton("", self)
         self.btn_toggle.setToolTip("Strg+Q")
         self.btn_toggle.clicked.connect(self.toggle_mode.emit)
         layout.addWidget(self.btn_toggle)
@@ -288,7 +292,7 @@ class Sidebar(QWidget):
                 act = m.addAction(title)
                 act.triggered.connect(lambda _=False, i=idx: self.view_selected.emit(i))
             m.addSeparator()
-            act_settings = m.addAction("Einstellungen")
+            act_settings = m.addAction(tr("Settings"))
             act_settings.triggered.connect(self.request_settings.emit)
             m.exec(self.mapToGlobal(self.btn_burger.geometry().bottomLeft()))
 
@@ -396,3 +400,11 @@ class Sidebar(QWidget):
         # Titel wieder setzen
         self.set_titles(self._all_titles)
         self.updateGeometry()
+
+    def retranslate_ui(self):
+        if hasattr(self, 'btn_burger'):
+            self.btn_burger.setToolTip(tr('Menu'))
+        if hasattr(self, 'btn_settings'):
+            self.btn_settings.setToolTip(tr('Settings'))
+        if hasattr(self, 'btn_toggle'):
+            self.btn_toggle.setText(tr('Switch'))

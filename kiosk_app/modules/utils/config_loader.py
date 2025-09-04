@@ -50,6 +50,7 @@ class UISettings:
     placeholder_enabled: bool = True
     placeholder_gif_path: str = ""
     theme: str = "light"                     # "light" oder "dark"
+    language: str = ""                       # z.B. "de" oder "en"; leer = Systemstandard
     logo_path: str = ""
 
 
@@ -234,6 +235,7 @@ def _parse_ui(data: Dict[str, Any]) -> UISettings:
         placeholder_enabled=_as_bool(ui, "placeholder_enabled", True),
         placeholder_gif_path=_safe_str(ui.get("placeholder_gif_path") or ""),
         theme=_safe_str(ui.get("theme") or "light"),
+        language=_safe_str(ui.get("language") or ""),
         logo_path=_safe_str(ui.get("logo_path") or ""),
     )
 

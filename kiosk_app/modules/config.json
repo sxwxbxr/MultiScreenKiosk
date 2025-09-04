@@ -28,6 +28,7 @@
     "placeholder_enabled": true,
     "placeholder_gif_path": "",
     "theme": "light",
+    "language": "",
     "logo_path": ""
   },
   "kiosk": {
