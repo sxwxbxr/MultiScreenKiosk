@@ -1,7 +1,7 @@
 from typing import List
 
-from PySide6.QtCore import Qt, QTimer, Signal, Slot, QEvent
-from PySide6.QtGui import QShortcut, QKeySequence, QDrag, QMimeData
+from PySide6.QtCore import Qt, QTimer, Signal, Slot, QEvent, QMimeData
+from PySide6.QtGui import QShortcut, QKeySequence, QDrag
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QStackedWidget,
     QGridLayout, QLabel, QApplication, QToolButton, QMenu, QMessageBox
