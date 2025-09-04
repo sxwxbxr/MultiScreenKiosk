@@ -15,7 +15,7 @@
       "window_class_pattern": null,
       "child_window_class_pattern": null,
       "follow_children": true,
-      "allow_global_fallback": true
+      "allow_global_fallback": false
     }
   ],
   "ui": {
@@ -28,7 +28,6 @@
     "placeholder_enabled": true,
     "placeholder_gif_path": "",
     "theme": "light",
-    "language": "",
     "logo_path": ""
   },
   "kiosk": {
