@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 # Log Viewer und Log Pfad
 from modules.ui.log_viewer import LogViewer
 from modules.utils.logger import get_log_path, get_logger
+from modules.utils.i18n import tr, i18n
 
 # Fenster Spy optional importieren
 try:
@@ -39,7 +40,7 @@ class LogStatsDialog(QDialog):
     def __init__(self, log_path: str, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self._path = log_path
-        self.setWindowTitle("Log Statistik")
+        self.setWindowTitle(tr("Log Statistics"))
         self.setModal(False)
         self.setMinimumSize(520, 360)
 
@@ -53,7 +54,7 @@ class LogStatsDialog(QDialog):
 
         btns = QHBoxLayout()
         btns.addStretch(1)
-        self.btn_close = QPushButton("Schliessen", self)
+        self.btn_close = QPushButton(tr("Close"), self)
         self.btn_close.clicked.connect(self.close)
         btns.addWidget(self.btn_close)
         layout.addLayout(btns)
@@ -63,7 +64,12 @@ class LogStatsDialog(QDialog):
         self._timer.timeout.connect(self._refresh)
         self._timer.start()
 
+        i18n.language_changed.connect(lambda _l: self._apply_translations())
         self._refresh()
+
+    def _apply_translations(self):
+        self.setWindowTitle(tr("Log Statistics"))
+        self.btn_close.setText(tr("Close"))
 
     def closeEvent(self, ev):
         try:
@@ -155,7 +161,7 @@ class SettingsDialog(QDialog):
         bar_l.setContentsMargins(12, 8, 12, 8)
         bar_l.setSpacing(8)
 
-        self.title_lbl = QLabel("Einstellungen", bar)
+        self.title_lbl = QLabel("", bar)
         bar_l.addWidget(self.title_lbl, 1)
 
         self.btn_close = QPushButton("×", bar)
@@ -171,72 +177,87 @@ class SettingsDialog(QDialog):
 
         # Ausrichtung
         row1 = QHBoxLayout()
-        row1.addWidget(QLabel("Ausrichtung"))
+        self.lbl_orientation = QLabel("", self)
+        row1.addWidget(self.lbl_orientation)
         self.nav_combo = QComboBox(self)
-        self.nav_combo.addItems(["left", "top"])
-        self.nav_combo.setCurrentText(nav_orientation or "left")
+        self.nav_combo.addItem("", "left")
+        self.nav_combo.addItem("", "top")
+        self.nav_combo.setCurrentIndex(0 if (nav_orientation or "left") == "left" else 1)
         row1.addWidget(self.nav_combo, 1)
 
         # Hamburger
         row2 = QHBoxLayout()
-        self.hamburger_cb = QCheckBox("Burgermenue anzeigen ermoeglichen", self)
+        self.hamburger_cb = QCheckBox("", self)
         self.hamburger_cb.setChecked(bool(enable_hamburger))
         row2.addWidget(self.hamburger_cb, 1)
 
         # Theme
         row3 = QHBoxLayout()
-        row3.addWidget(QLabel("Theme"))
+        self.lbl_theme = QLabel("", self)
+        row3.addWidget(self.lbl_theme)
         self.theme_combo = QComboBox(self)
-        self.theme_combo.addItems(["light", "dark"])
-        self.theme_combo.setCurrentText(theme or "light")
+        self.theme_combo.addItem("", "light")
+        self.theme_combo.addItem("", "dark")
+        self.theme_combo.setCurrentIndex(0 if (theme or "light") == "light" else 1)
         row3.addWidget(self.theme_combo, 1)
+
+        # Language
+        row_lang = QHBoxLayout()
+        self.lbl_language = QLabel("", self)
+        row_lang.addWidget(self.lbl_language)
+        self.language_combo = QComboBox(self)
+        self.language_combo.addItem("", "de")
+        self.language_combo.addItem("", "en")
+        cur_lang = i18n.get_language()
+        self.language_combo.setCurrentIndex(0 if cur_lang.startswith("de") else 1)
+        row_lang.addWidget(self.language_combo, 1)
 
         # Placeholder
         row4 = QHBoxLayout()
-        self.placeholder_cb = QCheckBox("Placeholder aktiv", self)
+        self.placeholder_cb = QCheckBox("", self)
         self.placeholder_cb.setChecked(bool(placeholder_enabled))
         row4.addWidget(self.placeholder_cb)
 
         self.gif_edit = QLineEdit(self)
-        self.gif_edit.setPlaceholderText("Pfad zu GIF")
+        self.gif_edit.setPlaceholderText("")
         self.gif_edit.setText(placeholder_gif_path or "")
-        btn_browse_gif = QPushButton("Waehlen", self)
-        btn_browse_gif.clicked.connect(self._browse_gif)
+        self.btn_browse_gif = QPushButton("", self)
+        self.btn_browse_gif.clicked.connect(self._browse_gif)
         row4.addWidget(self.gif_edit, 1)
-        row4.addWidget(btn_browse_gif)
+        row4.addWidget(self.btn_browse_gif)
 
         # Logo
         row5 = QHBoxLayout()
-        row5.addWidget(QLabel("Logo Pfad"))
+        self.lbl_logo = QLabel("", self)
+        row5.addWidget(self.lbl_logo)
         self.logo_edit = QLineEdit(self)
-        self.logo_edit.setPlaceholderText("Pfad zum Logo")
+        self.logo_edit.setPlaceholderText("")
         self.logo_edit.setText(logo_path or "")
-        btn_browse_logo = QPushButton("Waehlen", self)
-        btn_browse_logo.clicked.connect(self._browse_logo)
+        self.btn_browse_logo = QPushButton("", self)
+        self.btn_browse_logo.clicked.connect(self._browse_logo)
         row5.addWidget(self.logo_edit, 1)
-        row5.addWidget(btn_browse_logo)
+        row5.addWidget(self.btn_browse_logo)
 
         body_l.addLayout(row1)
         body_l.addLayout(row2)
         body_l.addLayout(row3)
+        body_l.addLayout(row_lang)
         body_l.addLayout(row4)
         body_l.addLayout(row5)
+        self.info_lbl = None
         if not split_enabled:
-            info_lbl = QLabel(
-                "Hinweis: Splitscreen ist deaktiviert. Wechsel ueber die Sidebar, Strg+Q ist inaktiv.",
-                self,
-            )
-            info_lbl.setWordWrap(True)
-            body_l.addWidget(info_lbl)
+            self.info_lbl = QLabel("", self)
+            self.info_lbl.setWordWrap(True)
+            body_l.addWidget(self.info_lbl)
 
         # ---------- Footer Aktionen ----------
         footer = QHBoxLayout()
-        self.btn_logs = QPushButton("Logs", self)
-        self.btn_stats = QPushButton("Log Statistik", self)
-        self.btn_spy = QPushButton("Fenster Spy", self)
-        self.btn_quit = QPushButton("Beenden", self)
-        self.btn_cancel = QPushButton("Abbrechen", self)
-        self.btn_ok = QPushButton("Speichern", self)
+        self.btn_logs = QPushButton("", self)
+        self.btn_stats = QPushButton("", self)
+        self.btn_spy = QPushButton("", self)
+        self.btn_quit = QPushButton("", self)
+        self.btn_cancel = QPushButton("", self)
+        self.btn_ok = QPushButton("", self)
         footer.addWidget(self.btn_logs)
         footer.addWidget(self.btn_stats)
         footer.addWidget(self.btn_spy)
@@ -267,14 +288,18 @@ class SettingsDialog(QDialog):
         # Child Fenster Referenzen
         self._child_windows: List[QDialog] = []
 
+        i18n.language_changed.connect(lambda _l: self._apply_translations())
+        self._apply_translations()
+
     # ------- Actions -------
     def _accept_save(self):
         self._result = {
-            "nav_orientation": self.nav_combo.currentText(),
+            "nav_orientation": self.nav_combo.currentData(),
             "enable_hamburger": bool(self.hamburger_cb.isChecked()),
             "placeholder_enabled": bool(self.placeholder_cb.isChecked()),
             "placeholder_gif_path": self.gif_edit.text().strip(),
-            "theme": self.theme_combo.currentText(),
+            "theme": self.theme_combo.currentData(),
+            "language": self.language_combo.currentData(),
             "logo_path": self.logo_edit.text().strip(),
             "quit_requested": False,
         }
@@ -300,8 +325,8 @@ class SettingsDialog(QDialog):
         if not _HAVE_SPY:
             QMessageBox.information(
                 self,
-                "Fenster Spy",
-                "Fenster Spy ist nicht verfuegbar.\nDas Modul window_spy konnte nicht geladen werden."
+                tr("Window Spy"),
+                tr("Window Spy is not available.\nThe module window_spy could not be loaded.")
             )
             return
 
@@ -309,9 +334,9 @@ class SettingsDialog(QDialog):
         def _on_spy_attach(*args, **kwargs):
             _log.info("Spy Auswahl empfangen args=%s kwargs=%s", args, kwargs, extra={"source": "window_spy"})
             # Nutzerverstaendliche Rueckmeldung
-            QMessageBox.information(self, "Fenster ausgewaehlt",
-                                    "Das Fenster wurde erkannt. Falls Einbettung vorgesehen ist, "
-                                    "uebernimmt die App dies automatisch.")
+            QMessageBox.information(self,
+                                    tr("Window selected"),
+                                    tr("The window was recognized. If embedding is intended, the app does this automatically."))
         # Versuche die exakte Signatur aus deinem Screenshot: keyword only
         try:
             dlg = WindowSpyDialog(title="Fenster Spy", pid_root=None, attach_callback=_on_spy_attach, parent=self)  # type: ignore
@@ -319,24 +344,21 @@ class SettingsDialog(QDialog):
             # Verstaendliche Meldung, plus technische Info klein
             QMessageBox.warning(
                 self,
-                "Fenster Spy",
-                "Fenster Spy konnte nicht gestartet werden.\n"
-                "Diese Version benoetigt einen anderen Start.\n\n"
-                f"Technische Info: {ex}"
+                tr("Window Spy"),
+                tr("Window Spy could not be started.\nThis version requires a different start.\n\nTechnical info: {ex}", ex=ex)
             )
             return
         except Exception as ex:
             QMessageBox.warning(
                 self,
-                "Fenster Spy",
-                "Fenster Spy konnte nicht gestartet werden.\n"
-                f"Technische Info: {ex}"
+                tr("Window Spy"),
+                tr("Window Spy could not be started.\nTechnical info: {ex}", ex=ex)
             )
             return
 
         try:
             if not dlg.windowTitle():
-                dlg.setWindowTitle("Fenster Spy")
+                dlg.setWindowTitle(tr("Window Spy"))
             dlg.setModal(False)
             dlg.setAttribute(Qt.WA_DeleteOnClose, True)
             dlg.show()
@@ -344,16 +366,15 @@ class SettingsDialog(QDialog):
         except Exception as ex:
             QMessageBox.warning(
                 self,
-                "Fenster Spy",
-                "Fenster Spy konnte nicht angezeigt werden.\n"
-                f"Technische Info: {ex}"
+                tr("Window Spy"),
+                tr("Window Spy could not be displayed.\nTechnical info: {ex}", ex=ex)
             )
 
     def _request_quit(self):
         m = QMessageBox(self)
-        m.setWindowTitle("Beenden bestaetigen")
-        m.setText("Moechtest du die Anwendung beenden")
-        m.setInformativeText("Ungespeicherte Aenderungen gehen moeglicherweise verloren.")
+        m.setWindowTitle(tr("Confirm quit"))
+        m.setText(tr("Do you want to quit the application"))
+        m.setInformativeText(tr("Unsaved changes might get lost."))
         m.setIcon(QMessageBox.Warning)
         m.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
         m.setDefaultButton(QMessageBox.No)
@@ -361,11 +382,12 @@ class SettingsDialog(QDialog):
 
         if res == QMessageBox.Yes:
             self._result = {
-                "nav_orientation": self.nav_combo.currentText(),
+                "nav_orientation": self.nav_combo.currentData(),
                 "enable_hamburger": bool(self.hamburger_cb.isChecked()),
                 "placeholder_enabled": bool(self.placeholder_cb.isChecked()),
                 "placeholder_gif_path": self.gif_edit.text().strip(),
-                "theme": self.theme_combo.currentText(),
+                "theme": self.theme_combo.currentData(),
+                "language": self.language_combo.currentData(),
                 "logo_path": self.logo_edit.text().strip(),
                 "quit_requested": True,
             }
@@ -373,22 +395,23 @@ class SettingsDialog(QDialog):
 
     def results(self) -> Dict[str, Any]:
         return self._result or {
-            "nav_orientation": self.nav_combo.currentText(),
+            "nav_orientation": self.nav_combo.currentData(),
             "enable_hamburger": bool(self.hamburger_cb.isChecked()),
             "placeholder_enabled": bool(self.placeholder_cb.isChecked()),
             "placeholder_gif_path": self.gif_edit.text().strip(),
-            "theme": self.theme_combo.currentText(),
+            "theme": self.theme_combo.currentData(),
+            "language": self.language_combo.currentData(),
             "logo_path": self.logo_edit.text().strip(),
             "quit_requested": False,
         }
 
     def _browse_gif(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Placeholder GIF", "", "GIF (*.gif);;Alle Dateien (*)")
+        path, _ = QFileDialog.getOpenFileName(self, tr("Placeholder GIF"), "", "GIF (*.gif);;All files (*)")
         if path:
             self.gif_edit.setText(path)
 
     def _browse_logo(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Logo", "", "Bilder (*.png *.jpg *.jpeg *.bmp *.gif);;Alle Dateien (*)")
+        path, _ = QFileDialog.getOpenFileName(self, tr("Logo"), "", "Images (*.png *.jpg *.jpeg *.bmp *.gif);;All files (*)")
         if path:
             self.logo_edit.setText(path)
 
@@ -426,3 +449,30 @@ class SettingsDialog(QDialog):
             QCheckBox::indicator { width: 18px; height: 18px; border-radius: 4px; border:1px solid rgba(128,128,128,0.45); background: rgba(255,255,255,0.03); }
             QCheckBox::indicator:checked { background:#0a84ff; border-color:#0a84ff; }
         """)
+
+    def _apply_translations(self):
+        self.title_lbl.setText(tr("Settings"))
+        self.lbl_orientation.setText(tr("Orientation"))
+        self.nav_combo.setItemText(0, tr("Left"))
+        self.nav_combo.setItemText(1, tr("Top"))
+        self.hamburger_cb.setText(tr("Enable hamburger menu"))
+        self.lbl_theme.setText(tr("Theme"))
+        self.theme_combo.setItemText(0, tr("Light"))
+        self.theme_combo.setItemText(1, tr("Dark"))
+        self.lbl_language.setText(tr("Language"))
+        self.language_combo.setItemText(0, tr("German"))
+        self.language_combo.setItemText(1, tr("English"))
+        self.placeholder_cb.setText(tr("Enable placeholder"))
+        self.gif_edit.setPlaceholderText(tr("Path to GIF"))
+        self.btn_browse_gif.setText(tr("Browse"))
+        self.lbl_logo.setText(tr("Logo path"))
+        self.logo_edit.setPlaceholderText(tr("Path to logo"))
+        self.btn_browse_logo.setText(tr("Browse"))
+        if self.info_lbl is not None:
+            self.info_lbl.setText(tr("Note: Split screen is disabled. Switch via the sidebar, Ctrl+Q is inactive."))
+        self.btn_logs.setText(tr("Logs"))
+        self.btn_stats.setText(tr("Log Statistics"))
+        self.btn_spy.setText(tr("Window Spy"))
+        self.btn_quit.setText(tr("Quit"))
+        self.btn_cancel.setText(tr("Cancel"))
+        self.btn_ok.setText(tr("Save"))

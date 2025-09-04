@@ -15,6 +15,7 @@ from modules.ui.app_state import AppState
 from modules.ui.main_window import MainWindow
 from modules.ui.setup_dialog import SetupDialog
 from modules.utils.config_loader import Config
+from modules.utils.i18n import i18n
 
 
 def default_cfg_path() -> Path:
@@ -110,6 +111,12 @@ def main() -> int:
         app.quit()
         return 0
     cfg = cfg_after
+
+    # Sprache setzen
+    try:
+        i18n.set_language(getattr(cfg.ui, "language", "") or i18n.get_language())
+    except Exception:
+        pass
 
     # App State
     state = AppState()

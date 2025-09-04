@@ -15,6 +15,7 @@ from modules.services.local_app_service import (
     snapshot_processes
 )
 from modules.utils.logger import get_logger
+from modules.utils.i18n import tr, i18n
 
 
 class WindowSpyDialog(QDialog):
@@ -24,7 +25,7 @@ class WindowSpyDialog(QDialog):
                  attach_callback,
                  parent: Optional[Widget] = None):  # type: ignore[name-defined]
         super().__init__(parent)
-        self.setWindowTitle(title)
+        self.setWindowTitle(title or tr("Window Spy"))
         self.setModal(False)
         self.setWindowFlag(Qt.Window, True)
         self.setWindowModality(Qt.NonModal)
@@ -34,21 +35,21 @@ class WindowSpyDialog(QDialog):
         self.pid_root = pid_root
         self.attach_callback = attach_callback
 
-        self.only_family_cb = QCheckBox("Nur PID Familie filtern", self)
+        self.only_family_cb = QCheckBox("", self)
         self.only_family_cb.setChecked(True)
 
         self.table = QTableWidget(self)
         self.table.setColumnCount(4)
-        self.table.setHorizontalHeaderLabels(["HWND", "PID", "Klasse", "Titel"])
+        self.table.setHorizontalHeaderLabels(["HWND", "PID", tr("Class"), tr("Title")])
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
         self.table.setSortingEnabled(True)
 
-        btn_refresh = QPushButton("Neu laden", self)
-        btn_attach = QPushButton("Auswahl einbetten", self)
-        btn_close = QPushButton("Schliessen", self)
+        btn_refresh = QPushButton("", self)
+        btn_attach = QPushButton("", self)
+        btn_close = QPushButton("", self)
 
         btn_refresh.clicked.connect(self.reload)
         btn_attach.clicked.connect(self.attach_selected)
@@ -56,21 +57,27 @@ class WindowSpyDialog(QDialog):
         self.only_family_cb.stateChanged.connect(self.reload)
 
         top = QHBoxLayout()
-        top.addWidget(QLabel(f"Root PID: {self.pid_root if self.pid_root else '-'}"))
+        self.lbl_root = QLabel("", self)
+        top.addWidget(self.lbl_root)
         top.addStretch(1)
         top.addWidget(self.only_family_cb)
 
         bottom = QHBoxLayout()
-        bottom.addWidget(btn_refresh)
+        self.btn_refresh = btn_refresh
+        self.btn_attach = btn_attach
+        self.btn_close = btn_close
+        bottom.addWidget(self.btn_refresh)
         bottom.addStretch(1)
-        bottom.addWidget(btn_attach)
-        bottom.addWidget(btn_close)
+        bottom.addWidget(self.btn_attach)
+        bottom.addWidget(self.btn_close)
 
         root = QVBoxLayout(self)
         root.addLayout(top)
         root.addWidget(self.table, 1)
         root.addLayout(bottom)
 
+        i18n.language_changed.connect(lambda _l: self._apply_translations())
+        self._apply_translations()
         self.reload()
         self._center_on_parent()
 
@@ -104,6 +111,14 @@ class WindowSpyDialog(QDialog):
                     res.add(child)
                     queue.append(child)
         return res
+
+    def _apply_translations(self):
+        self.setWindowTitle(tr("Window Spy"))
+        self.only_family_cb.setText(tr("Only filter PID family"))
+        self.lbl_root.setText(tr("Root PID: {pid}", pid=self.pid_root if self.pid_root else "-"))
+        self.btn_refresh.setText(tr("Reload"))
+        self.btn_attach.setText(tr("Attach selection"))
+        self.btn_close.setText(tr("Close"))
 
     def reload(self):
         self.table.setRowCount(0)
@@ -155,7 +170,7 @@ class WindowSpyDialog(QDialog):
     def attach_selected(self):
         items = self.table.selectedItems()
         if not items:
-            QMessageBox.information(self, "Fenster Spy", "Bitte eine Zeile waehlen")
+            QMessageBox.information(self, tr("Window Spy"), tr("Please select a row"))
             return
         row = items[0].row()
         hwnd_item = self.table.item(row, 0)
@@ -164,10 +179,10 @@ class WindowSpyDialog(QDialog):
         try:
             hwnd = int(hwnd_item.text(), 16)
         except Exception:
-            QMessageBox.warning(self, "Fenster Spy", "Ungueltige HWND")
+            QMessageBox.warning(self, tr("Window Spy"), tr("Invalid HWND"))
             return
         try:
             self.attach_callback(hwnd)
             self.log.info(f"Attach via Spy auf hwnd={hex(hwnd)}", extra={"source": "spy"})
         except Exception as ex:
-            QMessageBox.critical(self, "Fenster Spy", f"Attach fehlgeschlagen:\n{ex}")
+            QMessageBox.critical(self, tr("Window Spy"), tr("Attach failed:\n{ex}", ex=ex))

@@ -16,6 +16,7 @@ from modules.services.browser_services import BrowserService, make_webview
 from modules.services.local_app_service import LocalAppWidget
 from modules.utils.config_loader import Config, SourceSpec, save_config
 from modules.utils.logger import get_logger
+from modules.utils.i18n import tr, i18n
 
 
 def _clear_layout(layout):
@@ -74,7 +75,7 @@ class MainWindow(QMainWindow):
         # Overlay Burger
         self.overlay_burger = QToolButton(self)
         self.overlay_burger.setText("☰")
-        self.overlay_burger.setToolTip("Menue")
+        self.overlay_burger.setToolTip("")
         self.overlay_burger.setVisible(False)
         self.overlay_burger.clicked.connect(self._open_overlay_menu)
 
@@ -83,6 +84,8 @@ class MainWindow(QMainWindow):
 
         # Theme
         self.apply_theme(self.cfg.ui.theme)
+        i18n.language_changed.connect(lambda _l: self.retranslate_ui())
+        self.retranslate_ui()
 
         # Shortcuts
         for i in range(4):
@@ -174,12 +177,12 @@ class MainWindow(QMainWindow):
             act = m.addAction(title)
             act.triggered.connect(lambda _=False, i=idx: self.on_select_view(i))
         m.addSeparator()
-        act_show = m.addAction("Leiste anzeigen")
+        act_show = m.addAction(tr("Show bar"))
         act_show.triggered.connect(lambda: self.set_sidebar_collapsed(False))
         if self.cfg.ui.split_enabled:
-            act_switch = m.addAction("Switch")
+            act_switch = m.addAction(tr("Switch"))
             act_switch.triggered.connect(self.on_toggle_mode)
-        act_settings = m.addAction("Einstellungen")
+        act_settings = m.addAction(tr("Settings"))
         act_settings.triggered.connect(self.open_settings)
         pos = self.overlay_burger.mapToGlobal(self.overlay_burger.rect().bottomLeft())
         m.exec(pos)
@@ -329,10 +332,12 @@ class MainWindow(QMainWindow):
             self.cfg.ui.enable_hamburger = res["enable_hamburger"]
             self.cfg.ui.placeholder_enabled = res["placeholder_enabled"]
             self.cfg.ui.placeholder_gif_path = res["placeholder_gif_path"]
+            self.cfg.ui.language = res["language"]
             self.cfg.ui.logo_path = res["logo_path"]
 
             # Anwenden
             self.apply_theme(self.cfg.ui.theme)
+            i18n.set_language(self.cfg.ui.language)
             self._build_root_and_sidebar()
             if not self.cfg.ui.enable_hamburger:
                 self.set_sidebar_collapsed(False)
@@ -349,6 +354,14 @@ class MainWindow(QMainWindow):
 
             try:
                 save_config(self.cfg)
+            except Exception:
+                pass
+
+    def retranslate_ui(self):
+        self.overlay_burger.setToolTip(tr("Menu"))
+        if getattr(self, "sidebar", None):
+            try:
+                self.sidebar.retranslate_ui()
             except Exception:
                 pass
 
