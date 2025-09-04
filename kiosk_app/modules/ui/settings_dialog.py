@@ -138,6 +138,7 @@ class SettingsDialog(QDialog):
                  placeholder_gif_path: str,
                  theme: str,
                  logo_path: str,
+                 split_enabled: bool,
                  parent: Optional[QWidget] = None):
         super().__init__(parent)
 
@@ -220,6 +221,13 @@ class SettingsDialog(QDialog):
         body_l.addLayout(row3)
         body_l.addLayout(row4)
         body_l.addLayout(row5)
+        if not split_enabled:
+            info_lbl = QLabel(
+                "Hinweis: Splitscreen ist deaktiviert. Wechsel ueber die Sidebar, Strg+Q ist inaktiv.",
+                self,
+            )
+            info_lbl.setWordWrap(True)
+            body_l.addWidget(info_lbl)
 
         # ---------- Footer Aktionen ----------
         footer = QHBoxLayout()

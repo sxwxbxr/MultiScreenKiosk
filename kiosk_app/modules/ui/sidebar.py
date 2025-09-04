@@ -87,7 +87,7 @@ class Sidebar(QWidget):
     collapsed_changed = Signal(bool)  # true = eingeklappt
 
     def __init__(self, titles: List[str], width: int = 96, orientation: str = "left",
-                 enable_hamburger: bool = True, logo_path: str = "", parent=None):
+                 enable_hamburger: bool = True, logo_path: str = "", split_enabled: bool = True, parent=None):
         super().__init__(parent)
         self._orientation = orientation  # "left" oder "top"
         self._all_titles = titles[:]
@@ -97,6 +97,7 @@ class Sidebar(QWidget):
         self._collapsed = False
         self._enable_hamburger = enable_hamburger
         self._logo_path = logo_path
+        self._split_enabled = split_enabled
 
         self.setObjectName("Sidebar")
         self._build_ui()
@@ -198,6 +199,7 @@ class Sidebar(QWidget):
         self.btn_toggle.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.btn_toggle.clicked.connect(self.toggle_mode.emit)
         root.addWidget(self.btn_toggle)
+        self.btn_toggle.setVisible(self._split_enabled)
 
         self._layout = root
 
@@ -264,6 +266,7 @@ class Sidebar(QWidget):
         self.btn_toggle.setToolTip("Strg+Q")
         self.btn_toggle.clicked.connect(self.toggle_mode.emit)
         layout.addWidget(self.btn_toggle)
+        self.btn_toggle.setVisible(self._split_enabled)
 
         # Freie Flaeche mit grossem Logo
         layout.addStretch(1)
@@ -295,7 +298,7 @@ class Sidebar(QWidget):
         self.buttons_wrap.setVisible(not collapsed)
         self.btn_prev.setVisible(not collapsed)
         self.btn_next.setVisible(not collapsed)
-        self.btn_toggle.setVisible(not collapsed)
+        self.btn_toggle.setVisible(self._split_enabled and not collapsed)
         if hasattr(self, "logo"):
             self.logo.setVisible(not collapsed)
         self._apply_thickness()

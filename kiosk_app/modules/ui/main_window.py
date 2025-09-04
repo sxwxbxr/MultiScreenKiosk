@@ -48,6 +48,8 @@ class MainWindow(QMainWindow):
         self.num_sources = len(self.sources)
         self.current_page = 0
         self.page_size = 4
+        if not self.cfg.ui.split_enabled:
+            self.state.start_mode = "single"
 
         # Widgets fuer Quellen
         self.source_widgets: List[QWidget] = []
@@ -88,7 +90,8 @@ class MainWindow(QMainWindow):
             sc.activated.connect(lambda idx=i: self._select_by_position(idx))
         QShortcut(QKeySequence("Ctrl+Right"), self).activated.connect(lambda: self._page_delta(+1))
         QShortcut(QKeySequence("Ctrl+Left"), self).activated.connect(lambda: self._page_delta(-1))
-        QShortcut(QKeySequence("Ctrl+Q"), self).activated.connect(self.on_toggle_mode)
+        if self.cfg.ui.split_enabled:
+            QShortcut(QKeySequence("Ctrl+Q"), self).activated.connect(self.on_toggle_mode)
         QShortcut(QKeySequence("F11"), self).activated.connect(self.toggle_kiosk)
 
         # Services
@@ -125,7 +128,8 @@ class MainWindow(QMainWindow):
             width=self.cfg.ui.sidebar_width,
             orientation=self.cfg.ui.nav_orientation,
             enable_hamburger=self.cfg.ui.enable_hamburger,
-            logo_path=self.cfg.ui.logo_path
+            logo_path=self.cfg.ui.logo_path,
+            split_enabled=self.cfg.ui.split_enabled
         )
         self.sidebar.view_selected.connect(self.on_select_view)
         self.sidebar.toggle_mode.connect(self.on_toggle_mode)
@@ -172,8 +176,9 @@ class MainWindow(QMainWindow):
         m.addSeparator()
         act_show = m.addAction("Leiste anzeigen")
         act_show.triggered.connect(lambda: self.set_sidebar_collapsed(False))
-        act_switch = m.addAction("Switch")
-        act_switch.triggered.connect(self.on_toggle_mode)
+        if self.cfg.ui.split_enabled:
+            act_switch = m.addAction("Switch")
+            act_switch.triggered.connect(self.on_toggle_mode)
         act_settings = m.addAction("Einstellungen")
         act_settings.triggered.connect(self.open_settings)
         pos = self.overlay_burger.mapToGlobal(self.overlay_burger.rect().bottomLeft())
@@ -303,6 +308,7 @@ class MainWindow(QMainWindow):
             placeholder_gif_path=self.cfg.ui.placeholder_gif_path,
             theme=self.cfg.ui.theme,
             logo_path=self.cfg.ui.logo_path,
+            split_enabled=self.cfg.ui.split_enabled,
             parent=self
         )
         if dlg.exec():
@@ -394,6 +400,8 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def on_toggle_mode(self):
+        if not self.cfg.ui.split_enabled:
+            return
         self.state.toggle_mode()
         self.apply_mode(self.state.mode)
 
