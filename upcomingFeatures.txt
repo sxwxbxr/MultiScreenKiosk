@@ -1,0 +1,52 @@
+Upcoming Features (target: Version 1.0)
+
+1. Configurable Keyboard Shortcuts
+   - Objective: allow users to define and modify keyboard shortcuts for frequently used actions.
+   - Implementation: provide a settings UI for mapping actions to key combinations; persist mappings in config.json; validate conflicts with existing shortcuts.
+   - Acceptance Criteria: user-defined shortcuts trigger actions, persist across restarts, and warn on conflicts.
+
+2. On-Screen Keyboard Support
+   - Objective: supply a virtual keyboard for touch-only kiosks or accessibility needs.
+   - Implementation: integrate an on-screen keyboard overlay that can appear on demand or automatically for text inputs; evaluate using Windows OSK or a Qt-based solution.
+   - Acceptance Criteria: keyboard displays/hides correctly, inputs text to focused field, and respects kiosk restrictions.
+
+3. Multi-Language Interface
+   - Objective: offer localization and runtime language switching for all UI elements.
+   - Implementation: externalize strings into translation files (e.g., Qt .qm) and add a language selector in settings; default to system locale.
+   - Acceptance Criteria: all visible strings change when language is switched, including dialogs and menus.
+
+4. Drag-and-Drop Pane Reordering
+   - Objective: let users rearrange content panes dynamically without restarting the app.
+   - Implementation: enable drag handles in the quad layout to swap panes; update app state and config accordingly.
+   - Acceptance Criteria: panes swap position via drag-and-drop and new order persists immediately.
+
+5. Theme Scheduling
+   - Objective: automatically switch between light and dark themes based on time of day.
+   - Implementation: add scheduling options (sunrise/sunset or custom times) in settings and apply theme changes on schedule.
+   - Acceptance Criteria: theme toggles at defined times while the app runs continuously.
+
+6. Config Backup & Restore
+   - Objective: allow exporting and importing configuration snapshots through the UI.
+   - Implementation: provide buttons to download and upload config.json with validation and rollback on error.
+   - Acceptance Criteria: users can save current config to file and restore from file without manual file access.
+
+7. Remote Log Export
+   - Objective: enable sending log files to a remote server or email for monitoring.
+   - Implementation: support HTTP/SFTP/email destinations with authentication settings and retention options.
+   - Acceptance Criteria: logs transmit on demand or on schedule, and failures are reported to the user.
+
+8. On-Device Diagnostics Panel
+   - Objective: display system metrics (CPU, memory, network) to aid troubleshooting.
+   - Implementation: add a diagnostics view using psutil or platform APIs to fetch metrics; update in real time.
+   - Acceptance Criteria: panel shows accurate metrics without degrading kiosk performance.
+
+9. Auto-Update Mechanism
+   - Objective: check for and apply software updates automatically.
+   - Implementation: implement update checker against a release feed; download, verify, and install updates, prompting for restart.
+   - Acceptance Criteria: new versions are detected and installed reliably with rollback on failure.
+
+10. Content Scheduling
+   - Objective: rotate displayed sources (URLs or apps) based on defined time blocks.
+   - Implementation: allow schedule definitions per pane specifying source and time ranges; scheduler swaps sources accordingly.
+   - Acceptance Criteria: content changes at scheduled times with minimal disruption and schedule is editable via settings.
+
