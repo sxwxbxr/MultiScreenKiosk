@@ -1,44 +1,38 @@
-# MultiScreenKiosk – Installations-, Konfigurations- und Bedienungsanleitung
+# MultiScreenKiosk – Schritt-für-Schritt-Anleitung
 
-## Installation
+## 1. Download und Installation
+1. Öffnen Sie die Release-Seite des Projekts.
+   - *Screenshot: Release-Seite*
+2. Laden Sie die Datei `MultiScreenKiosk-win64.zip` herunter.
+   - *Screenshot: Download*
+3. Entpacken Sie das ZIP in einen Ordner Ihrer Wahl.
+   - *Screenshot: Entpacktes Verzeichnis*
+4. Starten Sie `MultiScreenKiosk.exe` per Doppelklick.
+   - *Screenshot: Start der EXE*
 
-1. **Voraussetzungen**
-   - Windows 10 oder neuer
-2. **Download**
-   - Neueste Release von der Projektseite herunterladen.
-3. **Start**
-   - Ggf. ZIP entpacken und `MultiScreenKiosk.exe` ausführen.
+## 2. Ersteinrichtung (Setup)
+1. Rufen Sie das Setup mit `MultiScreenKiosk.exe --setup` auf.
+   - *Screenshot: Setup-Aufruf*
+2. Legen Sie die **Anzahl der Fenster** fest.
+   - *Screenshot: Auswahl der Fenster*
+3. Fügen Sie für jedes Fenster eine Quelle hinzu (z. B. URL).
+   - *Screenshot: Quelle hinzufügen*
+4. Speichern Sie den Dialog – die Datei `kiosk_app/modules/config.json` wird angelegt.
+   - *Screenshot: Speichern*
 
-## Konfiguration
+## 3. Start mit vorhandener Konfiguration
+1. Starten Sie `MultiScreenKiosk.exe` ohne Parameter.
+   - *Screenshot: Programmstart*
+2. Optional: `--config PFAD` für eine eigene Konfigurationsdatei.
+   - *Screenshot: Eigener Config-Pfad*
 
-1. **Erster Start**
-   - `MultiScreenKiosk.exe --setup`
-   - Dialog zum Festlegen der **Anzahl der Fenster** und **Quellen**.
-2. **Konfigurationsdatei**
-   - Pfad: `kiosk_app/modules/config.json`
-   - Struktur-Beispiel:
-     ```json
-     {
-       "sources": [{"type": "browser", "name": "Google", "url": "https://www.google.com"}],
-       "ui": {"start_mode": "single", "shortcuts": {}},
-       "kiosk": {"monitor_index": 0, "kiosk_fullscreen": true}
-     }
-     ```
-   - Alternativ über den Setup‑Dialog erzeugen lassen.
-
-## Bedienung
-
-1. **Starten**
-   - Standard: `MultiScreenKiosk.exe`
-   - Optionen:
-     - `--config PATH` – alternativen Konfigurationspfad verwenden
-     - `--setup` – Setup-Dialog erneut öffnen
-     - `--log-level LVL` – Log‑Level überschreiben (DEBUG, INFO, …)
-2. **Tastenkürzel**
-   - `Ctrl+1…4` – Pane auswählen
+## 4. Bedienung
+1. **Tastenkürzel**
+   - `Ctrl+1…4` – Fenster auswählen
    - `Ctrl+Q` – Einzel-/Vierfachansicht umschalten
    - `F11` – Kiosk-Vollbild an/aus
    - `Shift + Schließen` – Beenden im Kiosk-Modus
-3. **Logging**
-   - Logdateien unter `%LOCALAPPDATA%\\MultiScreenKiosk\\logs`
-   - Pro Start: `YYYYMMDD_N_Logfile.log`
+   - *Screenshot: Bedienoberfläche*
+2. **Logging**
+   - Logdateien: `%LOCALAPPDATA%\\MultiScreenKiosk\\logs`
+   - *Screenshot: Logverzeichnis*

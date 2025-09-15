@@ -1,44 +1,38 @@
-# MultiScreenKiosk – Installation, Configuration and Operation Guide
+# MultiScreenKiosk – Step-by-Step Guide
 
-## Installation
+## 1. Download and Installation
+1. Open the project's release page.
+   - *Screenshot: release page*
+2. Download `MultiScreenKiosk-win64.zip`.
+   - *Screenshot: download*
+3. Extract the ZIP to a folder of your choice.
+   - *Screenshot: extracted folder*
+4. Double-click `MultiScreenKiosk.exe` to launch it.
+   - *Screenshot: launching the EXE*
 
-1. **Requirements**
-   - Windows 10 or newer
-2. **Download**
-   - Fetch the latest release from the project page.
-3. **Start**
-   - Unzip if necessary and run `MultiScreenKiosk.exe`.
+## 2. Initial Setup
+1. Start the setup via `MultiScreenKiosk.exe --setup`.
+   - *Screenshot: setup launch*
+2. Choose the **number of panes**.
+   - *Screenshot: pane selection*
+3. Add a source for each pane (e.g., URL).
+   - *Screenshot: add source*
+4. Save the dialog – the file `kiosk_app/modules/config.json` is created.
+   - *Screenshot: save*
 
-## Configuration
+## 3. Starting with an Existing Configuration
+1. Run `MultiScreenKiosk.exe` without parameters.
+   - *Screenshot: program start*
+2. Optional: use `--config PATH` to supply a custom configuration.
+   - *Screenshot: custom config*
 
-1. **First run**
-   - `MultiScreenKiosk.exe --setup`
-   - Dialog to define **number of panes** and **sources**.
-2. **Configuration file**
-   - Path: `kiosk_app/modules/config.json`
-   - Example structure:
-     ```json
-     {
-       "sources": [{"type": "browser", "name": "Google", "url": "https://www.google.com"}],
-       "ui": {"start_mode": "single", "shortcuts": {}},
-       "kiosk": {"monitor_index": 0, "kiosk_fullscreen": true}
-     }
-     ```
-   - Alternatively generate via the setup dialog.
-
-## Operation
-
-1. **Start**
-   - Default: `MultiScreenKiosk.exe`
-   - Options:
-     - `--config PATH` – use custom config path
-     - `--setup` – force the setup dialog
-     - `--log-level LVL` – override log level (DEBUG, INFO, …)
-2. **Keyboard shortcuts**
+## 4. Operation
+1. **Keyboard shortcuts**
    - `Ctrl+1…4` – select pane
    - `Ctrl+Q` – toggle single/quad view
    - `F11` – toggle kiosk fullscreen
-   - `Shift + Close` – allow exit in kiosk mode
-3. **Logging**
-   - Log files stored under `%LOCALAPPDATA%\\MultiScreenKiosk\\logs`
-   - Per launch: `YYYYMMDD_N_Logfile.log`
+   - `Shift + Close` – exit in kiosk mode
+   - *Screenshot: user interface*
+2. **Logging**
+   - Logs: `%LOCALAPPDATA%\\MultiScreenKiosk\\logs`
+   - *Screenshot: log folder*
