@@ -36,3 +36,6 @@
 2. **Logging**
    - Logs: `%LOCALAPPDATA%\\MultiScreenKiosk\\logs`
    - *Screenshot: log folder*
+3. **Configuration backup & restore**
+   - Open **Settings → Backup config** to save the current setup to a JSON file.
+   - Use **Settings → Restore config** to load a snapshot. The application validates the file and keeps the previous configuration if something fails.

@@ -1,7 +1,8 @@
 from __future__ import annotations
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Callable
 
 import os
+from pathlib import Path
 from PySide6.QtCore import Qt, QPoint, QTimer
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
@@ -150,6 +151,8 @@ class SettingsDialog(QDialog):
                  logo_path: str,
                  split_enabled: bool,
                  shortcuts: Optional[Dict[str, str]] = None,
+                 backup_handler: Optional[Callable[[Path], None]] = None,
+                 restore_handler: Optional[Callable[[Path], Any]] = None,
                  parent: Optional[QWidget] = None):
         super().__init__(parent)
 
@@ -158,6 +161,8 @@ class SettingsDialog(QDialog):
         self.setModal(True)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
         self.setMinimumSize(640, 380)
+        self._backup_handler = backup_handler
+        self._restore_handler = restore_handler
 
         # ---------- Titlebar ----------
         bar = QWidget(self)
@@ -280,12 +285,18 @@ class SettingsDialog(QDialog):
 
         # ---------- Footer Aktionen ----------
         footer = QHBoxLayout()
+        self.btn_backup = QPushButton("", self)
+        self.btn_backup.clicked.connect(self._trigger_backup)
+        self.btn_restore = QPushButton("", self)
+        self.btn_restore.clicked.connect(self._trigger_restore)
         self.btn_logs = QPushButton("", self)
         self.btn_stats = QPushButton("", self)
         self.btn_spy = QPushButton("", self)
         self.btn_quit = QPushButton("", self)
         self.btn_cancel = QPushButton("", self)
         self.btn_ok = QPushButton("", self)
+        footer.addWidget(self.btn_backup)
+        footer.addWidget(self.btn_restore)
         footer.addWidget(self.btn_logs)
         footer.addWidget(self.btn_stats)
         footer.addWidget(self.btn_spy)
@@ -315,6 +326,11 @@ class SettingsDialog(QDialog):
 
         # Child Fenster Referenzen
         self._child_windows: List[QDialog] = []
+
+        if not self._backup_handler:
+            self.btn_backup.setVisible(False)
+        if not self._restore_handler:
+            self.btn_restore.setVisible(False)
 
         i18n.language_changed.connect(lambda _l: self._apply_translations())
         self._apply_translations()
@@ -361,6 +377,56 @@ class SettingsDialog(QDialog):
         dlg.setAttribute(Qt.WA_DeleteOnClose, True)
         dlg.show()
         self._child_windows.append(dlg)
+
+    def _trigger_backup(self):
+        if not self._backup_handler:
+            return
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            tr("Backup config"),
+            "",
+            tr("JSON files (*.json);;All files (*)")
+        )
+        if not file_path:
+            return
+        path = Path(file_path)
+        if not path.suffix:
+            path = path.with_suffix(".json")
+        try:
+            self._backup_handler(path)
+            _log.info("config backup written to %s", path)
+        except Exception as ex:
+            _log.error("config backup failed: %s", ex)
+            QMessageBox.critical(self, tr("Backup config"), tr("Backup failed: {ex}", ex=ex))
+            return
+        QMessageBox.information(self, tr("Backup config"), tr("Configuration saved to {path}", path=str(path)))
+
+    def _trigger_restore(self):
+        if not self._restore_handler:
+            return
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            tr("Restore config"),
+            "",
+            tr("JSON files (*.json);;All files (*)")
+        )
+        if not file_path:
+            return
+        path = Path(file_path)
+        try:
+            cfg = self._restore_handler(path)
+            _log.info("config restored from %s", path)
+        except Exception as ex:
+            _log.error("config restore failed: %s", ex)
+            QMessageBox.critical(self, tr("Restore config"), tr("Restore failed: {ex}", ex=ex))
+            return
+        QMessageBox.information(self, tr("Restore config"), tr("Configuration restored from {path}", path=str(path)))
+        self._result = {
+            "restored_config": cfg,
+            "restored_from": str(path),
+            "quit_requested": False,
+        }
+        self.accept()
 
     # ===== Fenster Spy =====
     def _open_window_spy(self):
@@ -537,6 +603,10 @@ class SettingsDialog(QDialog):
             lbl.setText(names.get(key, key))
         if self.info_lbl is not None:
             self.info_lbl.setText(tr("Note: Split screen is disabled. Switch via the sidebar, Ctrl+Q is inactive."))
+        if hasattr(self, "btn_backup"):
+            self.btn_backup.setText(tr("Backup config"))
+        if hasattr(self, "btn_restore"):
+            self.btn_restore.setText(tr("Restore config"))
         self.btn_logs.setText(tr("Logs"))
         self.btn_stats.setText(tr("Log Statistics"))
         self.btn_spy.setText(tr("Window Spy"))

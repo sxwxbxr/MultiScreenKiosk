@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+import copy
+import json
+from pathlib import Path
 from typing import List
 
 from PySide6.QtCore import Qt, QTimer, Signal, Slot
@@ -14,7 +19,7 @@ from modules.ui.browser_host import BrowserHostWidget
 from modules.ui.window_spy import WindowSpyDialog
 from modules.services.browser_services import BrowserService, make_webview
 from modules.services.local_app_service import LocalAppWidget
-from modules.utils.config_loader import Config, SourceSpec, save_config, DEFAULT_SHORTCUTS
+from modules.utils.config_loader import Config, SourceSpec, save_config, load_config, DEFAULT_SHORTCUTS
 from modules.utils.logger import get_logger
 from modules.utils.i18n import tr, i18n
 
@@ -34,12 +39,17 @@ def _attach(widget: QWidget, host_layout):
 class MainWindow(QMainWindow):
     request_quit = Signal()
 
-    def __init__(self, cfg: Config, state: AppState, parent=None):
+    def __init__(self, cfg: Config, state: AppState, config_path: Path | None = None, parent=None):
         super().__init__(parent)
         self.cfg = cfg
         self.state = state
         self.log = get_logger(__name__)
         self.setObjectName("MainWindow")
+
+        if config_path is not None:
+            self.cfg_path = Path(config_path).resolve()
+        else:
+            self.cfg_path = Path(__file__).resolve().parent / "config.json"
 
         # Programmgesteuerter Quit Flag fuer closeEvent
         self._programmatic_quit = False
@@ -236,6 +246,143 @@ class MainWindow(QMainWindow):
                 self.source_widgets.append(w)
                 self.browser_services.append(None)
 
+    def _cleanup_sources(self):
+        for svc in getattr(self, "browser_services", []):
+            if svc is not None:
+                try:
+                    svc.stop()
+                except Exception:
+                    pass
+        for w in getattr(self, "source_widgets", []):
+            try:
+                if isinstance(w, LocalAppWidget):
+                    w.stop()
+            except Exception:
+                pass
+            try:
+                w.setParent(None)
+            except Exception:
+                pass
+            try:
+                w.deleteLater()
+            except Exception:
+                pass
+        if hasattr(self, "single_layout"):
+            _clear_layout(self.single_layout)
+        if hasattr(self, "grid_layout"):
+            while self.grid_layout.count():
+                it = self.grid_layout.takeAt(0)
+                w = it.widget()
+                if w:
+                    w.setParent(None)
+        self.source_widgets = []
+        self.browser_services = []
+
+    def _apply_config_object(self, cfg: Config):
+        self.cfg = cfg
+        self.sources = cfg.sources[:] if cfg.sources else []
+        self.num_sources = len(self.sources)
+        self.current_page = 0
+        self.state.set_active(0 if self.num_sources else 0)
+
+        start_mode = getattr(cfg.ui, "start_mode", "single") or "single"
+        if start_mode not in ("single", "quad"):
+            start_mode = "single"
+        if not cfg.ui.split_enabled:
+            start_mode = "single"
+        self.state.start_mode = start_mode
+
+        self._create_source_widgets()
+        self._build_root_and_sidebar()
+        self.apply_theme(cfg.ui.theme)
+        try:
+            i18n.set_language(cfg.ui.language or i18n.get_language())
+        except Exception:
+            pass
+
+        if not cfg.ui.enable_hamburger:
+            self.set_sidebar_collapsed(False)
+        else:
+            self._place_overlay_burger()
+
+        if getattr(self, "sidebar", None):
+            try:
+                self.sidebar.set_titles([s.name for s in self.sources])
+                self.sidebar.set_active_global_index(self.state.active_index)
+            except Exception:
+                pass
+
+        self._setup_shortcuts()
+        self.apply_mode(self.state.mode)
+        if self.num_sources:
+            self.on_select_view(min(self.state.active_index, self.num_sources - 1))
+        self._start_services()
+
+    def _backup_config(self, target_path: Path) -> None:
+        path = Path(target_path).resolve()
+        self.log.info("export config to %s", path, extra={"source": "config"})
+        save_config(path, self.cfg)
+
+    def _restore_config(self, source_path: Path) -> Config:
+        path = Path(source_path).resolve()
+        if not path.exists():
+            raise ValueError(tr("Selected file is not a valid configuration."))
+        try:
+            with path.open("r", encoding="utf-8") as f:
+                raw = json.load(f)
+        except Exception as ex:
+            raise ValueError(tr("Selected file is not a valid configuration.")) from ex
+
+        if not isinstance(raw, dict):
+            raise ValueError(tr("Selected file is not a valid configuration."))
+
+        has_sources = bool(raw.get("sources"))
+        has_browser = bool(raw.get("browser_urls"))
+        has_local = bool(raw.get("local_app"))
+        has_count = False
+        try:
+            has_count = int(raw.get("count", 0)) > 0
+        except Exception:
+            has_count = False
+
+        if not (has_sources or has_browser or has_local or has_count):
+            raise ValueError(tr("Configuration must define at least one source."))
+
+        cfg = load_config(path)
+        if not cfg.sources:
+            raise ValueError(tr("Configuration must define at least one source."))
+        return cfg
+
+    def _apply_restored_config(self, cfg: Config):
+        old_cfg = copy.deepcopy(self.cfg)
+        try:
+            self._cleanup_sources()
+            self._apply_config_object(cfg)
+        except Exception as ex:
+            self.log.error("failed to apply restored config: %s", ex, extra={"source": "config"})
+            try:
+                self._cleanup_sources()
+                self._apply_config_object(old_cfg)
+            except Exception:
+                self.log.exception("failed to rollback UI after restore error", extra={"source": "config"})
+            raise
+
+        try:
+            save_config(self.cfg_path, cfg)
+        except Exception as ex:
+            self.log.error("failed to persist restored config: %s", ex, extra={"source": "config"})
+            try:
+                save_config(self.cfg_path, old_cfg)
+            except Exception:
+                self.log.exception("failed to rollback config file after restore error", extra={"source": "config"})
+            try:
+                self._cleanup_sources()
+                self._apply_config_object(old_cfg)
+            except Exception:
+                self.log.exception("failed to rollback UI after persistence error", extra={"source": "config"})
+            raise
+
+
     # ---------- Layout Umschaltungen ----------
     def _attach_single(self, idx: int):
         if not (0 <= idx < len(self.source_widgets)):
@@ -306,10 +453,24 @@ class MainWindow(QMainWindow):
             logo_path=self.cfg.ui.logo_path,
             split_enabled=self.cfg.ui.split_enabled,
             shortcuts=self.cfg.ui.shortcuts,
+            backup_handler=self._backup_config,
+            restore_handler=self._restore_config,
             parent=self
         )
         if dlg.exec():
             res = dlg.results()
+
+            restored_cfg = res.get("restored_config")
+            if restored_cfg:
+                try:
+                    self._apply_restored_config(restored_cfg)
+                    self.log.info(
+                        "config restored",
+                        extra={"source": "config", "path": res.get("restored_from")}
+                    )
+                except Exception as ex:
+                    QMessageBox.critical(self, tr("Restore config"), tr("Restore failed: {ex}", ex=ex))
+                return
 
             # Beenden gewuenscht
             if res.get("quit_requested"):
@@ -350,9 +511,9 @@ class MainWindow(QMainWindow):
             self._setup_shortcuts()
 
             try:
-                save_config(self.cfg)
-            except Exception:
-                pass
+                save_config(self.cfg_path, self.cfg)
+            except Exception as ex:
+                self.log.error("failed to persist config update: %s", ex, extra={"source": "config"})
 
     def _setup_shortcuts(self):
         # vorhandene Shortcuts entfernen

@@ -36,3 +36,6 @@
 2. **Logging**
    - Logdateien: `%LOCALAPPDATA%\\MultiScreenKiosk\\logs`
    - *Screenshot: Logverzeichnis*
+3. **Konfiguration sichern & wiederherstellen**
+   - Öffnen Sie **Einstellungen → Config sichern**, um die aktuelle Konfiguration als JSON-Datei zu speichern.
+   - Nutzen Sie **Einstellungen → Config wiederherstellen**, um eine Sicherung zu laden. Die App prüft die Datei und stellt bei Fehlern automatisch die vorherige Konfiguration wieder her.
