@@ -8,13 +8,113 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QLineEdit,
-    QCheckBox, QPushButton, QTextEdit, QFileDialog, QMessageBox
+    QCheckBox, QPushButton, QTextEdit, QFileDialog, QMessageBox, QWidget
 )
 
 from modules.utils.logger import get_log_path, get_log_bridge
 from modules.utils.i18n import tr, i18n
 
 _LEVELS = ["ALLE", "DEBUG", "INFO", "WARNING", "ERROR"]
+
+
+def _human_size(n: int) -> str:
+    units = ["B", "KB", "MB", "GB", "TB"]
+    size = float(max(0, n))
+    idx = 0
+    while size >= 1024.0 and idx < len(units) - 1:
+        size /= 1024.0
+        idx += 1
+    if idx == 0:
+        return f"{int(size)} {units[idx]}"
+    return f"{size:.2f} {units[idx]}"
+
+
+class LogStatsDialog(QDialog):
+    """Live Log Statistik mit Dateigroesse und Level Zaehlern."""
+
+    def __init__(self, log_path: str, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self._path = log_path
+        self.setWindowTitle(tr("Log Statistics"))
+        self.setModal(False)
+        self.setMinimumSize(520, 360)
+
+        layout = QVBoxLayout(self)
+        self.lbl_info = QLabel(self)
+        layout.addWidget(self.lbl_info)
+
+        self.view = QTextEdit(self)
+        self.view.setReadOnly(True)
+        layout.addWidget(self.view, 1)
+
+        btns = QHBoxLayout()
+        btns.addStretch(1)
+        self.btn_close = QPushButton(tr("Close"), self)
+        self.btn_close.clicked.connect(self.close)
+        btns.addWidget(self.btn_close)
+        layout.addLayout(btns)
+
+        self._timer = QTimer(self)
+        self._timer.setInterval(1000)
+        self._timer.timeout.connect(self._refresh)
+        self._timer.start()
+
+        i18n.language_changed.connect(lambda _l: self._apply_translations())
+        self._refresh()
+
+    def _apply_translations(self):
+        self.setWindowTitle(tr("Log Statistics"))
+        self.btn_close.setText(tr("Close"))
+
+    def closeEvent(self, ev):
+        try:
+            self._timer.stop()
+        except Exception:
+            pass
+        super().closeEvent(ev)
+
+    def _refresh(self):
+        path = self._path
+        info = warn = err = dbg = 0
+        size = 0
+        exists = os.path.isfile(path)
+        if exists:
+            try:
+                size = os.path.getsize(path)
+            except Exception:
+                size = 0
+        try:
+            if exists:
+                with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                    for line in f:
+                        u = line.upper()
+                        if " DEBUG " in u or u.startswith("DEBUG") or '"LEVEL": "DEBUG"' in u:
+                            dbg += 1
+                        elif " INFO " in u or u.startswith("INFO") or '"LEVEL": "INFO"' in u:
+                            info += 1
+                        elif " WARNING " in u or u.startswith("WARNING") or '"LEVEL": "WARNING"' in u:
+                            warn += 1
+                        elif " ERROR " in u or u.startswith("ERROR") or '"LEVEL": "ERROR"' in u:
+                            err += 1
+            total = info + warn + err + dbg
+            human = _human_size(size)
+            self.lbl_info.setText(f"Datei: {path}")
+            text = (
+                f"Groesse: {human} ({size} Bytes)\n"
+                f"Gesamt:  {total}\n"
+                f"Info:    {info}\n"
+                f"Warn:    {warn}\n"
+                f"Error:   {err}\n"
+                f"Debug:   {dbg}"
+            )
+        except FileNotFoundError:
+            self.lbl_info.setText(f"Datei: {path}")
+            text = "Keine Logdatei gefunden."
+        except Exception as ex:
+            self.lbl_info.setText(f"Datei: {path}")
+            text = f"Fehler beim Lesen der Logdatei:\n{ex}"
+
+        self.view.setPlainText(text)
 
 
 class LogViewer(QDialog):
@@ -52,6 +152,7 @@ class LogViewer(QDialog):
         self.btn_refresh = QPushButton("", self)
         self.btn_clear = QPushButton("", self)
         self.btn_open = QPushButton("", self)
+        self.btn_stats = QPushButton("", self)
 
         for w in [self.level_combo, self.search_edit, self.regex_cb, self.case_cb, self.auto_cb, self.pause_cb]:
             top.addWidget(w)
@@ -59,6 +160,7 @@ class LogViewer(QDialog):
         top.addWidget(self.btn_refresh)
         top.addWidget(self.btn_clear)
         top.addWidget(self.btn_open)
+        top.addWidget(self.btn_stats)
 
         # Textansicht
         self.view = QTextEdit(self)
@@ -78,6 +180,7 @@ class LogViewer(QDialog):
         self.btn_refresh.clicked.connect(self._reload_all)
         self.btn_clear.clicked.connect(self._clear_file)
         self.btn_open.clicked.connect(self._open_external)
+        self.btn_stats.clicked.connect(self._open_stats_window)
 
         i18n.language_changed.connect(lambda _l: self._apply_translations())
         self._apply_translations()
@@ -252,3 +355,10 @@ class LogViewer(QDialog):
         self.btn_refresh.setText(tr("Reload"))
         self.btn_clear.setText(tr("Clear file"))
         self.btn_open.setText(tr("Open file"))
+        self.btn_stats.setText(tr("Log Statistics"))
+
+    def _open_stats_window(self):
+        dlg = LogStatsDialog(self._path, self)
+        dlg.setModal(False)
+        dlg.setAttribute(Qt.WA_DeleteOnClose, True)
+        dlg.show()
