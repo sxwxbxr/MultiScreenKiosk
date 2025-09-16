@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Optional, Dict, Any, List, Callable
+from copy import deepcopy
 
 import os
 from pathlib import Path
@@ -15,7 +16,8 @@ from PySide6.QtWidgets import (
 from modules.ui.log_viewer import LogViewer
 from modules.utils.logger import get_log_path, get_logger
 from modules.utils.i18n import tr, i18n
-from modules.utils.config_loader import DEFAULT_SHORTCUTS
+from modules.utils.config_loader import DEFAULT_SHORTCUTS, RemoteLogExportSettings
+from modules.ui.remote_export_dialog import RemoteExportDialog
 
 # Fenster Spy optional importieren
 try:
@@ -138,6 +140,7 @@ class SettingsDialog(QDialog):
         "theme": str,
         "logo_path": str,
         "shortcuts": Dict[str, str],
+        "remote_export": RemoteLogExportSettings,
         "quit_requested": bool
       }
     """
@@ -151,6 +154,7 @@ class SettingsDialog(QDialog):
                  logo_path: str,
                  split_enabled: bool,
                  shortcuts: Optional[Dict[str, str]] = None,
+                 remote_export: Optional[RemoteLogExportSettings] = None,
                  backup_handler: Optional[Callable[[Path], None]] = None,
                  restore_handler: Optional[Callable[[Path], Any]] = None,
                  parent: Optional[QWidget] = None):
@@ -163,6 +167,9 @@ class SettingsDialog(QDialog):
         self.setMinimumSize(640, 380)
         self._backup_handler = backup_handler
         self._restore_handler = restore_handler
+        self._remote_export_settings = (
+            deepcopy(remote_export) if remote_export is not None else RemoteLogExportSettings()
+        )
 
         # ---------- Titlebar ----------
         bar = QWidget(self)
@@ -291,6 +298,7 @@ class SettingsDialog(QDialog):
         self.btn_restore.clicked.connect(self._trigger_restore)
         self.btn_logs = QPushButton("", self)
         self.btn_stats = QPushButton("", self)
+        self.btn_remote_export = QPushButton("", self)
         self.btn_spy = QPushButton("", self)
         self.btn_quit = QPushButton("", self)
         self.btn_cancel = QPushButton("", self)
@@ -299,6 +307,7 @@ class SettingsDialog(QDialog):
         footer.addWidget(self.btn_restore)
         footer.addWidget(self.btn_logs)
         footer.addWidget(self.btn_stats)
+        footer.addWidget(self.btn_remote_export)
         footer.addWidget(self.btn_spy)
         footer.addStretch(1)
         footer.addWidget(self.btn_quit)
@@ -318,6 +327,7 @@ class SettingsDialog(QDialog):
         self.btn_ok.clicked.connect(self._accept_save)
         self.btn_logs.clicked.connect(self._open_logs_window)
         self.btn_stats.clicked.connect(self._open_stats_window)
+        self.btn_remote_export.clicked.connect(self._open_remote_export_dialog)
         self.btn_quit.clicked.connect(self._request_quit)
         self.btn_spy.clicked.connect(self._open_window_spy)
 
@@ -334,6 +344,7 @@ class SettingsDialog(QDialog):
 
         i18n.language_changed.connect(lambda _l: self._apply_translations())
         self._apply_translations()
+        self._update_remote_button_caption()
 
     # ------- Actions -------
     def _accept_save(self):
@@ -359,9 +370,24 @@ class SettingsDialog(QDialog):
             "language": self.language_combo.currentData(),
             "logo_path": self.logo_edit.text().strip(),
             "shortcuts": merged,
+            "remote_export": deepcopy(self._remote_export_settings),
             "quit_requested": False,
         }
         self.accept()
+
+    def _update_remote_button_caption(self):
+        status = tr("enabled") if getattr(self._remote_export_settings, "enabled", False) else tr("disabled")
+        count = len(getattr(self._remote_export_settings, "destinations", []) or [])
+        self.btn_remote_export.setText(tr("Remote export ({status})", status=status))
+        self.btn_remote_export.setToolTip(tr("{count} destinations configured", count=count))
+
+    def _open_remote_export_dialog(self):
+        dlg = RemoteExportDialog(self._remote_export_settings, self)
+        if dlg.exec():
+            result = dlg.result_settings()
+            if result is not None:
+                self._remote_export_settings = deepcopy(result)
+                self._update_remote_button_caption()
 
     def _open_logs_window(self):
         dlg = LogViewer(self)
@@ -497,6 +523,7 @@ class SettingsDialog(QDialog):
                 "theme": self.theme_combo.currentData(),
                 "language": self.language_combo.currentData(),
                 "logo_path": self.logo_edit.text().strip(),
+                "remote_export": deepcopy(self._remote_export_settings),
                 "quit_requested": True,
             }
             self.accept()
@@ -522,6 +549,7 @@ class SettingsDialog(QDialog):
             "language": self.language_combo.currentData(),
             "logo_path": self.logo_edit.text().strip(),
             "shortcuts": merged,
+            "remote_export": deepcopy(self._remote_export_settings),
             "quit_requested": False,
         }
 
@@ -609,7 +637,9 @@ class SettingsDialog(QDialog):
             self.btn_restore.setText(tr("Restore config"))
         self.btn_logs.setText(tr("Logs"))
         self.btn_stats.setText(tr("Log Statistics"))
+        self.btn_remote_export.setText(tr("Remote export"))
         self.btn_spy.setText(tr("Window Spy"))
         self.btn_quit.setText(tr("Quit"))
         self.btn_cancel.setText(tr("Cancel"))
         self.btn_ok.setText(tr("Save"))
+        self._update_remote_button_caption()

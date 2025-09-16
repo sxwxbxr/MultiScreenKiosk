@@ -85,3 +85,24 @@ def test_remote_logging_settings(tmp_path: Path):
     assert email_dest.type == "email"
     assert email_dest.smtp_host == "smtp.example.com"
     assert email_dest.email_to == ["ops@example.com"]
+
+
+def test_remote_logging_retention(tmp_path: Path):
+    cfg_data = {
+        "sources": [{"type": "browser", "name": "A", "url": "http://example.com"}],
+        "logging": {
+            "remote_export": {
+                "enabled": True,
+                "retention_count": None,
+                "retention_days": -1,
+                "schedule_minutes": 0,
+            }
+        },
+    }
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(cfg_data))
+    cfg = load_config(path)
+    remote = cfg.logging.remote_export
+    assert remote.retention_count is None
+    assert remote.retention_days is None
+    assert remote.schedule_minutes is None

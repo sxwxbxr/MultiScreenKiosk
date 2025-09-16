@@ -420,22 +420,39 @@ def _parse_remote_export(lg: Dict[str, Any]) -> RemoteLogExportSettings:
     raw = lg.get("remote_export") or {}
     if not isinstance(raw, dict):
         raw = {}
-    retention_count_val = _as_opt_int(raw.get("retention_count"))
-    if retention_count_val is not None and retention_count_val < 0:
-        retention_count_val = None
-    retention_days_val = _as_opt_int(raw.get("retention_days"))
-    if retention_days_val is not None and retention_days_val < 0:
-        retention_days_val = None
+
+    if "retention_count" in raw:
+        retention_count_val = _as_opt_int(raw.get("retention_count"))
+        if retention_count_val is None or retention_count_val < 0:
+            retention_count = None
+        else:
+            retention_count = retention_count_val
+    else:
+        retention_count = 10
+
+    if "retention_days" in raw:
+        retention_days_val = _as_opt_int(raw.get("retention_days"))
+        if retention_days_val is None or retention_days_val < 0:
+            retention_days = None
+        else:
+            retention_days = retention_days_val
+    else:
+        retention_days = None
+
+    schedule_minutes = _as_opt_int(raw.get("schedule_minutes"))
+    if schedule_minutes is not None and schedule_minutes <= 0:
+        schedule_minutes = None
+
     return RemoteLogExportSettings(
         enabled=_as_bool(raw, "enabled", False),
         destinations=_parse_remote_destinations(raw),
         include_history=_as_int(raw, "include_history", 3),
         compress=_as_bool(raw, "compress", True),
         staging_dir=_opt_str(raw.get("staging_dir")),
-        retention_days=retention_days_val,
-        retention_count=10 if retention_count_val is None else retention_count_val,
+        retention_days=retention_days,
+        retention_count=retention_count,
         source_glob=_safe_str(raw.get("source_glob") or "*.log"),
-        schedule_minutes=_as_opt_int(raw.get("schedule_minutes")),
+        schedule_minutes=schedule_minutes,
         notify_failures=_as_bool(raw, "notify_failures", True),
     )
 
