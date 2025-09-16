@@ -9,7 +9,7 @@ from typing import Dict, Any
 
 from PySide6.QtWidgets import QApplication, QDialog
 
-from modules.utils.config_loader import load_config, save_config, Config
+from modules.utils.config_loader import load_config, save_config, Config, LoggingSettings
 from modules.utils.logger import init_logging, get_logger
 from modules.ui.app_state import AppState
 from modules.ui.main_window import MainWindow
@@ -92,18 +92,29 @@ def maybe_run_setup(app: QApplication, cfg: Config, cfg_path: Path, force: bool)
 def main() -> int:
     args = parse_args()
 
-    # Logging frueh initialisieren, damit auch Setup Logs erfasst werden
+    cfg_path = Path(args.config).resolve()
+    cfg = load_config(cfg_path)
+
+    logging_cfg = getattr(cfg, "logging", None)
+    if args.log_level:
+        if logging_cfg:
+            logging_cfg.level = args.log_level
+        else:
+            logging_cfg = LoggingSettings(level=args.log_level)
+            cfg.logging = logging_cfg
+
     try:
-        init_logging(None)
+        init_logging(logging_cfg)
     except Exception:
-        pass
+        try:
+            init_logging(None)
+        except Exception:
+            pass
+
     log = get_logger(__name__)
     log.info("app starting", extra={"source": "main"})
 
     app = QApplication(sys.argv)
-
-    cfg_path = Path(args.config).resolve()
-    cfg = load_config(cfg_path)
 
     # Optionales Setup. Bei Abbruch sofort beenden.
     cfg_after = maybe_run_setup(app, cfg, cfg_path, force=args.setup)

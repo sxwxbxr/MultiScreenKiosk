@@ -8,11 +8,14 @@ import re
 import sys
 import threading
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from logging.handlers import QueueHandler, QueueListener, RotatingFileHandler
 from typing import Any, Deque, Dict, Optional, Tuple
 from collections import deque
 from pathlib import Path
+
+from modules.utils.config_loader import RemoteLogExportSettings
+from modules.utils.remote_export import RemoteLogExporter, RemoteExportResult, RemoteExportError
 
 # Qt Bridge optional
 try:
@@ -37,6 +40,7 @@ class LoggingConfig:
     mask_keys: Tuple[str, ...] = ("password", "token", "authorization", "auth", "secret")
     memory_buffer: int = 2000                   # Zeilen fuer Live Viewer
     enable_qt_bridge: bool = True               # Live Push ins UI
+    remote_export: Optional[RemoteLogExportSettings] = None
 
 # ========= Globale Objekte =========
 
@@ -45,8 +49,9 @@ _listener: Optional[QueueListener] = None
 _bridge: Optional["QtLogBridge"] = None
 _memory_ring: Deque[str] = deque(maxlen=2000)
 _root_config: Optional[LoggingConfig] = None
-_session_id: str = datetime.utcnow().strftime("%Y%m%d-%H%M%S-%f")
+_session_id: str = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
 _current_log_path: Optional[str] = None   # Pfad der aktuell verwendeten Logdatei
+_remote_exporter: Optional[RemoteLogExporter] = None
 
 # ========= Formatter =========
 
@@ -204,7 +209,14 @@ def _parse_level(s: str) -> int:
 
 def init_logging(cfg: Optional[LoggingConfig]) -> None:
     """Initialisiert asynchrones Logging und erstellt pro Start eine neue Datei."""
-    global _listener, _bridge, _root_config, _memory_ring, _current_log_path
+    global _listener, _bridge, _root_config, _memory_ring, _current_log_path, _remote_exporter
+
+    if _remote_exporter is not None:
+        try:
+            _remote_exporter.shutdown()
+        except Exception:
+            pass
+        _remote_exporter = None
 
     _root_config = cfg or LoggingConfig()
     log_dir = _root_config.dir or _default_log_dir()
@@ -286,6 +298,28 @@ def init_logging(cfg: Optional[LoggingConfig]) -> None:
         extra={"source": "logging"}
     )
 
+    # Remote Export optional aktivieren
+    remote_cfg = getattr(_root_config, "remote_export", None)
+    if remote_cfg and getattr(remote_cfg, "enabled", False):
+        try:
+            _remote_exporter = RemoteLogExporter(
+                remote_cfg,
+                log_path=selected_path,
+                logger=logging.getLogger(__name__),
+            )
+            if getattr(remote_cfg, "schedule_minutes", None):
+                _remote_exporter.start_periodic_export()
+            get_logger(__name__).info(
+                "remote log export ready",
+                extra={"source": "logging"}
+            )
+        except Exception as ex:
+            _remote_exporter = None
+            get_logger(__name__).error(
+                f"failed to initialise remote export: {ex}",
+                extra={"source": "logging"}
+            )
+
 # ========= Helpers =========
 
 class _Adapter(logging.LoggerAdapter):
@@ -317,6 +351,27 @@ def get_log_path() -> str:
     stem, ext = _split_name(LoggingConfig().filename)
     today = datetime.now().strftime("%Y%m%d")
     return os.path.join(d, f"{today}_1_{stem}{ext}")
+
+
+def get_remote_exporter() -> Optional[RemoteLogExporter]:
+    return _remote_exporter
+
+
+def export_logs_now(reason: str = "manual") -> RemoteExportResult:
+    if _remote_exporter is None:
+        raise RemoteExportError("remote log export is not configured")
+    return _remote_exporter.export_now(reason=reason)
+
+
+def start_remote_export_schedule(interval_minutes: Optional[int] = None) -> bool:
+    if _remote_exporter is None:
+        raise RemoteExportError("remote log export is not configured")
+    return _remote_exporter.start_periodic_export(interval_minutes)
+
+
+def stop_remote_export_schedule() -> None:
+    if _remote_exporter is not None:
+        _remote_exporter.stop_periodic_export()
 
 # ========= Qt Message Handler =========
 
