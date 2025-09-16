@@ -75,6 +75,17 @@ class KioskSettings:
 
 
 @dataclass
+class UpdateSettings:
+    enabled: bool = False
+    feed_url: str = ""
+    channel: str = "stable"
+    check_interval_hours: int = 6
+    verify_tls: bool = True
+    download_dir: Optional[str] = None
+    auto_install: bool = True
+
+
+@dataclass
 class RemoteLogDestination:
     type: str = "http"                       # "http", "sftp" oder "email"
     name: str = ""                           # Anzeigename fuer UI / Logs
@@ -138,6 +149,7 @@ class Config:
     ui: UISettings = field(default_factory=UISettings)
     kiosk: KioskSettings = field(default_factory=KioskSettings)
     logging: LoggingSettings = field(default_factory=LoggingSettings)
+    updates: UpdateSettings = field(default_factory=UpdateSettings)
 
 
 # Kompatibilitaetsaliasse fuer bestehende Imports in deinem Projekt
@@ -151,6 +163,7 @@ __all__ = [
     "UISettings",
     "KioskSettings",
     "LoggingSettings",
+    "UpdateSettings",
     "RemoteLogExportSettings",
     "RemoteLogDestination",
     "UIConfig",
@@ -162,6 +175,7 @@ __all__ = [
     "_parse_ui",
     "_parse_kiosk",
     "_parse_logging",
+    "_parse_updates",
     "DEFAULT_SHORTCUTS",
 ]
 
@@ -359,6 +373,28 @@ def _parse_kiosk(data: Dict[str, Any]) -> KioskSettings:
     )
 
 
+def _parse_updates(data: Dict[str, Any]) -> UpdateSettings:
+    raw = data.get("updates") or {}
+    if not isinstance(raw, dict):
+        raw = {}
+
+    interval_hours = _as_int(raw, "check_interval_hours", 6)
+    if interval_hours <= 0:
+        interval_hours = 6
+
+    download_dir = _opt_str(raw.get("download_dir"))
+
+    return UpdateSettings(
+        enabled=_as_bool(raw, "enabled", False),
+        feed_url=_safe_str(raw.get("feed_url") or ""),
+        channel=_safe_str(raw.get("channel") or "stable"),
+        check_interval_hours=interval_hours,
+        verify_tls=_as_bool(raw, "verify_tls", True),
+        download_dir=download_dir,
+        auto_install=_as_bool(raw, "auto_install", True),
+    )
+
+
 def _parse_remote_destinations(raw: Dict[str, Any]) -> List[RemoteLogDestination]:
     items = raw.get("destinations") if isinstance(raw, dict) else None
     destinations: List[RemoteLogDestination] = []
@@ -491,6 +527,7 @@ def _defaults_config() -> Config:
         ui=UISettings(),
         kiosk=KioskSettings(),
         logging=LoggingSettings(),
+        updates=UpdateSettings(),
     )
 
 # =========================
@@ -514,6 +551,7 @@ def load_config(path: Path) -> Config:
             ui=_parse_ui(raw),
             kiosk=_parse_kiosk(raw),
             logging=_parse_logging(raw),
+            updates=_parse_updates(raw),
         )
 
         if not cfg.sources:

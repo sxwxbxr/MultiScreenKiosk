@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import copy
 import json
+import sys
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from PySide6.QtCore import Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QShortcut, QKeySequence
@@ -17,11 +18,13 @@ from modules.ui.sidebar import Sidebar
 from modules.ui.settings_dialog import SettingsDialog
 from modules.ui.browser_host import BrowserHostWidget
 from modules.ui.window_spy import WindowSpyDialog
+from modules.services.auto_update import AutoUpdateService, UpdateResult
 from modules.services.browser_services import BrowserService, make_webview
 from modules.services.local_app_service import LocalAppWidget
 from modules.utils.config_loader import Config, SourceSpec, save_config, load_config, DEFAULT_SHORTCUTS
 from modules.utils.logger import get_logger, init_logging
 from modules.utils.i18n import tr, i18n
+from modules.version import __version__
 
 
 def _clear_layout(layout):
@@ -45,6 +48,7 @@ class MainWindow(QMainWindow):
         self.state = state
         self.log = get_logger(__name__)
         self.setObjectName("MainWindow")
+        self._auto_update_service: Optional[AutoUpdateService] = None
 
         if config_path is not None:
             self.cfg_path = Path(config_path).resolve()
@@ -112,6 +116,9 @@ class MainWindow(QMainWindow):
         self.reconnect_timer.setInterval(5000)
         self.reconnect_timer.timeout.connect(self._tick_watchdogs)
         self.reconnect_timer.start()
+
+        # Auto-Update nach dem Start im Hintergrund pruefen
+        self._maybe_start_auto_update()
 
     # ---------- Root und Sidebar ----------
     def _build_root_and_sidebar(self):
@@ -659,6 +666,64 @@ class MainWindow(QMainWindow):
         for w in self.source_widgets:
             if isinstance(w, LocalAppWidget):
                 w.start()
+
+    def _maybe_start_auto_update(self) -> None:
+        settings = getattr(self.cfg, "updates", None)
+        if not settings or not getattr(settings, "enabled", False):
+            return
+        feed_url = getattr(settings, "feed_url", "") or ""
+        if not feed_url.strip():
+            return
+
+        try:
+            install_dir = self._resolve_install_dir()
+            service = AutoUpdateService(
+                settings=settings,
+                install_dir=install_dir,
+                current_version=__version__,
+                logger=self.log,
+            )
+        except Exception as ex:
+            self.log.error("failed to initialise auto update: %s", ex, extra={"source": "update"})
+            return
+
+        self._auto_update_service = service
+
+        def _callback(result: Optional[UpdateResult]) -> None:
+            if not result:
+                return
+            if result.installed and result.release:
+                version = result.release.version
+
+                def _notify_success() -> None:
+                    QMessageBox.information(
+                        self,
+                        tr("Update installed"),
+                        tr(
+                            "MultiScreenKiosk was updated to version {version}. Please restart the application to finish.",
+                            version=version,
+                        ),
+                    )
+
+                QTimer.singleShot(0, _notify_success)
+            elif result.error:
+                error_text = result.error
+
+                def _notify_failure() -> None:
+                    QMessageBox.warning(
+                        self,
+                        tr("Update failed"),
+                        tr("Automatic update failed: {error}", error=error_text),
+                    )
+
+                QTimer.singleShot(0, _notify_failure)
+
+        service.run_in_background(_callback)
+
+    def _resolve_install_dir(self) -> Path:
+        if getattr(sys, "frozen", False):
+            return Path(sys.executable).resolve().parent
+        return Path(__file__).resolve().parents[2]
 
     def _tick_watchdogs(self):
         for svc in self.browser_services:
