@@ -14,7 +14,13 @@ from PySide6.QtWidgets import (
 from modules.utils.logger import get_log_path, get_log_bridge
 from modules.utils.i18n import tr, i18n
 
-_LEVELS = ["ALLE", "DEBUG", "INFO", "WARNING", "ERROR"]
+_LEVEL_CHOICES = [
+    ("ALL", "All levels"),
+    ("DEBUG", "Debug"),
+    ("INFO", "Info"),
+    ("WARNING", "Warning"),
+    ("ERROR", "Error"),
+]
 
 
 def _human_size(n: int) -> str:
@@ -98,21 +104,22 @@ class LogStatsDialog(QDialog):
                             err += 1
             total = info + warn + err + dbg
             human = _human_size(size)
-            self.lbl_info.setText(f"Datei: {path}")
-            text = (
-                f"Groesse: {human} ({size} Bytes)\n"
-                f"Gesamt:  {total}\n"
-                f"Info:    {info}\n"
-                f"Warn:    {warn}\n"
-                f"Error:   {err}\n"
-                f"Debug:   {dbg}"
-            )
+            self.lbl_info.setText(tr("File: {path}", path=path))
+            text_lines = [
+                tr("Size: {human} ({bytes} Bytes)", human=human, bytes=size),
+                tr("Total: {count}", count=total),
+                tr("Info: {count}", count=info),
+                tr("Warning: {count}", count=warn),
+                tr("Error: {count}", count=err),
+                tr("Debug: {count}", count=dbg),
+            ]
+            text = "\n".join(text_lines)
         except FileNotFoundError:
-            self.lbl_info.setText(f"Datei: {path}")
-            text = "Keine Logdatei gefunden."
+            self.lbl_info.setText(tr("File: {path}", path=path))
+            text = tr("No log file found")
         except Exception as ex:
-            self.lbl_info.setText(f"Datei: {path}")
-            text = f"Fehler beim Lesen der Logdatei:\n{ex}"
+            self.lbl_info.setText(tr("File: {path}", path=path))
+            text = tr("Error reading log file:\n{ex}", ex=ex)
 
         self.view.setPlainText(text)
 
@@ -135,7 +142,9 @@ class LogViewer(QDialog):
         self.lbl_level = QLabel("", self)
         top.addWidget(self.lbl_level)
         self.level_combo = QComboBox(self)
-        self.level_combo.addItems(_LEVELS)
+        self._level_choices = _LEVEL_CHOICES
+        for code, _ in self._level_choices:
+            self.level_combo.addItem("", code)
         self.level_combo.setCurrentIndex(0)
 
         self.search_edit = QLineEdit(self)
@@ -216,7 +225,12 @@ class LogViewer(QDialog):
             return
         try:
             # Dateidialog nur zum schnellen Kopieren oeffnen
-            QFileDialog.getOpenFileName(self, "Logdatei", path, "Log (*.log *.txt);;Alle Dateien (*)")
+            QFileDialog.getOpenFileName(
+                self,
+                tr("Open log file"),
+                path,
+                tr("Log files (*.log *.txt);;All files (*)"),
+            )
         except Exception:
             pass
 
@@ -307,12 +321,9 @@ class LogViewer(QDialog):
 
     def _passes_filters(self, line: str) -> bool:
         # Level Filter
-        lvl_sel = self.level_combo.currentText().upper()
-        if lvl_sel != "ALLE":
-            lvl = self._line_level(line)
-            # WARNING soll bei Auswahl WARNUNG angezeigt werden
-            target = "WARNING" if lvl_sel.startswith("WARN") else lvl_sel
-            if lvl != target:
+        lvl_sel = (self.level_combo.currentData() or "ALL").upper()
+        if lvl_sel != "ALL":
+            if self._line_level(line) != lvl_sel:
                 return False
         # Text Filter
         patt = self.search_edit.text().strip()
@@ -347,6 +358,9 @@ class LogViewer(QDialog):
     def _apply_translations(self):
         self.setWindowTitle(tr("Logs"))
         self.lbl_level.setText(tr("Level"))
+        for idx, (_code, key) in enumerate(self._level_choices):
+            if idx < self.level_combo.count():
+                self.level_combo.setItemText(idx, tr(key))
         self.search_edit.setPlaceholderText(tr("Filter text"))
         self.regex_cb.setText(tr("Regex"))
         self.case_cb.setText(tr("Case sensitive"))

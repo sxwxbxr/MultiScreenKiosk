@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 # Log Viewer und Log Pfad
 from modules.ui.log_viewer import LogViewer
 from modules.utils.logger import get_logger
-from modules.utils.i18n import tr, i18n
+from modules.utils.i18n import tr, i18n, LanguageInfo
 from modules.utils.config_loader import DEFAULT_SHORTCUTS, RemoteLogExportSettings
 from modules.ui.remote_export_dialog import RemoteExportDialog
 
@@ -121,10 +121,15 @@ class SettingsDialog(QDialog):
         self.lbl_language = QLabel("", self)
         row_lang.addWidget(self.lbl_language)
         self.language_combo = QComboBox(self)
-        self.language_combo.addItem("", "de")
-        self.language_combo.addItem("", "en")
+        self._language_options: List[LanguageInfo] = i18n.available_languages()
+        for info in self._language_options:
+            self.language_combo.addItem("", info.code)
         cur_lang = i18n.get_language()
-        self.language_combo.setCurrentIndex(0 if cur_lang.startswith("de") else 1)
+        try:
+            idx = next(i for i, info in enumerate(self._language_options) if info.code == cur_lang)
+        except StopIteration:
+            idx = 0
+        self.language_combo.setCurrentIndex(idx)
         row_lang.addWidget(self.language_combo, 1)
 
         # Placeholder
@@ -518,8 +523,12 @@ class SettingsDialog(QDialog):
         self.theme_combo.setItemText(0, tr("Light"))
         self.theme_combo.setItemText(1, tr("Dark"))
         self.lbl_language.setText(tr("Language"))
-        self.language_combo.setItemText(0, tr("German"))
-        self.language_combo.setItemText(1, tr("English"))
+        for idx, info in enumerate(self._language_options):
+            if idx < self.language_combo.count():
+                translated = tr(info.name)
+                if translated == info.name and info.native_name:
+                    translated = info.native_name
+                self.language_combo.setItemText(idx, translated)
         self.placeholder_cb.setText(tr("Enable placeholder"))
         self.gif_edit.setPlaceholderText(tr("Path to GIF"))
         self.btn_browse_gif.setText(tr("Browse"))

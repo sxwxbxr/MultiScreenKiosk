@@ -1,12 +1,13 @@
 from typing import List, Optional
 
 from PySide6.QtCore import QSize, Qt, QRectF, Signal
-from PySide6.QtGui import QPixmap, QPainter, QTransform
+from PySide6.QtGui import QPixmap, QPainter, QTransform, QKeySequence
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QToolButton, QPushButton,
     QFrame, QSizePolicy, QMenu
 )
 
+from modules.utils.config_loader import DEFAULT_SHORTCUTS
 from modules.utils.i18n import tr, i18n
 
 
@@ -125,6 +126,14 @@ class Sidebar(QWidget):
         else:
             self.setFixedWidth(48 if self._collapsed else self._thickness)
 
+    def _update_toggle_tooltip(self):
+        if not hasattr(self, "btn_toggle"):
+            return
+        seq = DEFAULT_SHORTCUTS.get("toggle_mode", "")
+        seq_text = QKeySequence(seq).toString(QKeySequence.NativeText) if seq else ""
+        tooltip = tr("Shortcut: {shortcut}", shortcut=seq_text) if seq_text else ""
+        self.btn_toggle.setToolTip(tooltip)
+
     # ---------- Aufbau ----------
     def _build_ui(self):
         if self._orientation == "top":
@@ -199,11 +208,12 @@ class Sidebar(QWidget):
 
         # Zeile 3: Switch vollbreit
         self.btn_toggle = QPushButton("", self)
-        self.btn_toggle.setToolTip("Strg+Q")
         self.btn_toggle.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.btn_toggle.clicked.connect(self.toggle_mode.emit)
         root.addWidget(self.btn_toggle)
         self.btn_toggle.setVisible(self._split_enabled)
+
+        self._update_toggle_tooltip()
 
         self._layout = root
 
@@ -267,10 +277,11 @@ class Sidebar(QWidget):
         layout.addWidget(self.buttons_wrap)
 
         self.btn_toggle = QPushButton("", self)
-        self.btn_toggle.setToolTip("Strg+Q")
         self.btn_toggle.clicked.connect(self.toggle_mode.emit)
         layout.addWidget(self.btn_toggle)
         self.btn_toggle.setVisible(self._split_enabled)
+
+        self._update_toggle_tooltip()
 
         # Freie Flaeche mit grossem Logo
         layout.addStretch(1)
@@ -408,3 +419,4 @@ class Sidebar(QWidget):
             self.btn_settings.setToolTip(tr('Settings'))
         if hasattr(self, 'btn_toggle'):
             self.btn_toggle.setText(tr('Switch'))
+            self._update_toggle_tooltip()
