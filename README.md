@@ -23,6 +23,7 @@ Switch between single view and a 2×2 grid, embed websites and native Windows ap
   * Per-launch log file **`YYYYMMDD_N_Logfile.log`**
   * In-app **Log Viewer** (with filter, clear file)
   * **Log Stats** window (INFO/WARN/ERROR/DEBUG counters + live file size)
+* **Auto-update** downloads and installs new releases automatically with verification and rollback
 * **Window Spy** (from Settings) to inspect running windows (title, class, child class) for embedding
 
 Target OS: **Windows 10 or newer**.

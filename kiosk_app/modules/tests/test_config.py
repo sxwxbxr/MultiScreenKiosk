@@ -106,3 +106,29 @@ def test_remote_logging_retention(tmp_path: Path):
     assert remote.retention_count is None
     assert remote.retention_days is None
     assert remote.schedule_minutes is None
+
+
+def test_update_settings_parse(tmp_path: Path):
+    cfg_data = {
+        "sources": [{"type": "browser", "name": "A", "url": "http://example.com"}],
+        "updates": {
+            "enabled": True,
+            "feed_url": "https://example.com/feed.json",
+            "channel": "beta",
+            "check_interval_hours": 12,
+            "verify_tls": False,
+            "download_dir": str(tmp_path / "downloads"),
+            "auto_install": False,
+        }
+    }
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(cfg_data))
+    cfg = load_config(path)
+    updates = cfg.updates
+    assert updates.enabled is True
+    assert updates.feed_url == "https://example.com/feed.json"
+    assert updates.channel == "beta"
+    assert updates.check_interval_hours == 12
+    assert updates.verify_tls is False
+    assert updates.download_dir == str(tmp_path / "downloads")
+    assert updates.auto_install is False
