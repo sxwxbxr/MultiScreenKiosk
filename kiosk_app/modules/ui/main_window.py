@@ -10,8 +10,8 @@ from PySide6.QtCore import Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QShortcut, QKeySequence
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QStackedWidget,
-    QGridLayout, QLabel, QApplication, QToolButton, QMenu, QMessageBox,
-    QFrame, QPushButton
+    QGridLayout, QApplication, QToolButton, QMenu, QMessageBox,
+    QFrame
 )
 
 from modules.ui.app_state import AppState, ViewMode
@@ -103,17 +103,8 @@ class MainWindow(QMainWindow):
         self.overlay_burger.setVisible(False)
         self.overlay_burger.clicked.connect(self._open_overlay_menu)
 
-        # Header references (created in _build_root_and_sidebar)
-        self.header_bar: QWidget | None = None
-        self.header_title: QLabel | None = None
-        self.header_subtitle: QLabel | None = None
-        self.mode_badge: QLabel | None = None
-        self.kiosk_badge: QLabel | None = None
-        self.btn_mode_toggle: QPushButton | None = None
-        self.btn_header_settings: QToolButton | None = None
-        self.btn_kiosk: QToolButton | None = None
+        # Content references (created in _build_root_and_sidebar)
         self.content_card: QFrame | None = None
-        self.content_container: QWidget | None = None
 
         # Theme palette before building the root widgets
         self._palette: ThemePalette = get_palette(self.cfg.ui.theme)
@@ -187,67 +178,20 @@ class MainWindow(QMainWindow):
             content = self._build_main_content(orientation)
             root.addWidget(content, 1)
 
-        self.content_container = content
         self.setCentralWidget(central)
 
         if self.num_sources:
             self.sidebar.set_active_global_index(min(self.state.active_index, self.num_sources - 1))
 
         self._place_overlay_burger()
-        self._update_header_info()
+        self._update_window_title()
 
     def _build_main_content(self, orientation: str) -> QWidget:
         container = QWidget(self)
         margins = (24, 24, 24, 24) if orientation != "top" else (24, 16, 24, 24)
         layout = QVBoxLayout(container)
         layout.setContentsMargins(*margins)
-        layout.setSpacing(18)
-
-        self.header_bar = QWidget(container)
-        self.header_bar.setObjectName("HeaderBar")
-        header_layout = QHBoxLayout(self.header_bar)
-        header_layout.setContentsMargins(24, 18, 24, 18)
-        header_layout.setSpacing(16)
-
-        header_texts = QVBoxLayout()
-        header_texts.setContentsMargins(0, 0, 0, 0)
-        header_texts.setSpacing(4)
-
-        self.header_title = QLabel("", self.header_bar)
-        self.header_title.setObjectName("HeaderTitle")
-        header_texts.addWidget(self.header_title)
-
-        self.header_subtitle = QLabel("", self.header_bar)
-        self.header_subtitle.setObjectName("HeaderSubtitle")
-        self.header_subtitle.setWordWrap(True)
-        header_texts.addWidget(self.header_subtitle)
-
-        header_layout.addLayout(header_texts, 1)
-
-        self.mode_badge = QLabel("", self.header_bar)
-        self.mode_badge.setObjectName("ModeBadge")
-        header_layout.addWidget(self.mode_badge)
-
-        self.kiosk_badge = QLabel("", self.header_bar)
-        self.kiosk_badge.setObjectName("StatusBadge")
-        header_layout.addWidget(self.kiosk_badge)
-
-        self.btn_mode_toggle = QPushButton("", self.header_bar)
-        self.btn_mode_toggle.setProperty("accent", True)
-        self.btn_mode_toggle.clicked.connect(self.on_toggle_mode)
-        header_layout.addWidget(self.btn_mode_toggle)
-        self.btn_mode_toggle.setVisible(self.cfg.ui.split_enabled)
-
-        self.btn_header_settings = QPushButton("", self.header_bar)
-        self.btn_header_settings.clicked.connect(self.open_settings)
-        header_layout.addWidget(self.btn_header_settings)
-
-        self.btn_kiosk = QPushButton("", self.header_bar)
-        self.btn_kiosk.setProperty("accent", True)
-        self.btn_kiosk.clicked.connect(self.toggle_kiosk)
-        header_layout.addWidget(self.btn_kiosk)
-
-        layout.addWidget(self.header_bar)
+        layout.setSpacing(0)
 
         self.content_card = QFrame(container)
         self.content_card.setObjectName("ContentCard")
@@ -259,68 +203,30 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.content_card, 1)
         return container
 
-    def _update_header_info(self) -> None:
-        if not self.header_title or not self.header_subtitle:
-            return
-
+    def _update_window_title(self) -> None:
+        app_name = "MultiScreenKiosk"
         if not self.sources:
-            self.header_title.setText(tr("Welcome"))
-            self.header_subtitle.setText(tr("Add sources in the setup dialog to get started."))
+            title = app_name
         else:
             active = self.state.active_index
             if not (0 <= active < len(self.sources)):
                 active = 0
-            self.header_title.setText(self.sources[active].name)
+            source_name = self.sources[active].name or tr("Source {index}", index=active + 1)
             if self.state.mode == ViewMode.SINGLE:
-                self.header_subtitle.setText(tr("Focused view · showing one source at a time"))
+                title = tr("{source} · Focus view", source=source_name)
             else:
                 total_pages = max(1, (self.num_sources + self.page_size - 1) // self.page_size)
-                self.header_subtitle.setText(
-                    tr(
-                        "Wall view · Page {current}/{total}",
-                        current=self.current_page + 1,
-                        total=total_pages,
-                    )
+                title = tr(
+                    "Wall view · Page {current}/{total}",
+                    current=self.current_page + 1,
+                    total=total_pages,
                 )
-
-        if self.mode_badge:
-            if self.state.mode == ViewMode.SINGLE:
-                self.mode_badge.setText(tr("Focus"))
-                self.mode_badge.setProperty("mode", "single")
-            else:
-                self.mode_badge.setText(tr("Wall"))
-                self.mode_badge.setProperty("mode", "wall")
-            self.mode_badge.style().unpolish(self.mode_badge)
-            self.mode_badge.style().polish(self.mode_badge)
-
-        if self.btn_mode_toggle:
-            if not self.cfg.ui.split_enabled:
-                self.btn_mode_toggle.hide()
-            else:
-                self.btn_mode_toggle.show()
-                if self.state.mode == ViewMode.SINGLE:
-                    self.btn_mode_toggle.setText(tr("Switch to wall view"))
-                else:
-                    self.btn_mode_toggle.setText(tr("Switch to focus view"))
-
-        if self.kiosk_badge:
-            if self.isFullScreen():
-                self.kiosk_badge.setText(tr("Kiosk"))
-                self.kiosk_badge.setProperty("status", "kiosk")
-            else:
-                self.kiosk_badge.setText(tr("Windowed"))
-                self.kiosk_badge.setProperty("status", "window")
-            self.kiosk_badge.style().unpolish(self.kiosk_badge)
-            self.kiosk_badge.style().polish(self.kiosk_badge)
-
-        if self.btn_kiosk:
-            if self.isFullScreen():
-                self.btn_kiosk.setText(tr("Leave kiosk mode"))
-            else:
-                self.btn_kiosk.setText(tr("Enter kiosk mode"))
-
-        if self.btn_header_settings:
-            self.btn_header_settings.setText(tr("Settings"))
+        if self.isFullScreen():
+            title = tr("{title} · Kiosk mode", title=title)
+        if title != app_name:
+            self.setWindowTitle(f"{title} – {app_name}")
+        else:
+            self.setWindowTitle(app_name)
 
     def resizeEvent(self, ev):
         super().resizeEvent(ev)
@@ -744,18 +650,12 @@ class MainWindow(QMainWindow):
 
     def retranslate_ui(self):
         self.overlay_burger.setToolTip(tr("Open navigation"))
-        if self.btn_header_settings:
-            self.btn_header_settings.setToolTip(tr("Open settings"))
-        if self.btn_kiosk:
-            self.btn_kiosk.setToolTip(tr("Toggle kiosk mode"))
-        if self.btn_mode_toggle:
-            self.btn_mode_toggle.setToolTip(tr("Toggle between wall and focus layouts"))
         if getattr(self, "sidebar", None):
             try:
                 self.sidebar.retranslate_ui()
             except Exception:
                 pass
-        self._update_header_info()
+        self._update_window_title()
 
     def apply_theme(self, theme: str) -> None:
         self._palette = get_palette(theme)
@@ -765,7 +665,7 @@ class MainWindow(QMainWindow):
                 self.sidebar.apply_palette(self._palette)
             except Exception:
                 pass
-        self._update_header_info()
+        self._update_window_title()
 
     # ---------- Paging Helfer ----------
     def _page_delta(self, delta: int):
@@ -781,6 +681,7 @@ class MainWindow(QMainWindow):
                 self.current_page = new_page
                 if self.state.mode == ViewMode.QUAD:
                     self._attach_quad_page(self.current_page)
+                self._update_window_title()
 
     # ---------- Slots ----------
     def _select_by_position(self, pos: int):
@@ -794,7 +695,7 @@ class MainWindow(QMainWindow):
             self._attach_quad_page(page)
             # Nach Seitenwechsel hart nachskalieren
             self._nudge_local_apps()
-        self._update_header_info()
+        self._update_window_title()
 
     @Slot()
     def on_toggle_mode(self):
@@ -813,7 +714,7 @@ class MainWindow(QMainWindow):
         if self.sidebar and self.sidebar.isVisible():
             self.sidebar.set_active_global_index(self.state.active_index)
         self._nudge_local_apps()
-        self._update_header_info()
+        self._update_window_title()
 
     @Slot(int)
     def on_select_view(self, idx: int):
@@ -828,7 +729,7 @@ class MainWindow(QMainWindow):
                 w.force_fit()
         if self.sidebar and self.sidebar.isVisible():
             self.sidebar.set_active_global_index(idx)
-        self._update_header_info()
+        self._update_window_title()
 
     # ---------- Window mgmt ----------
     def show_on_monitor(self, monitor_index: int):
@@ -980,11 +881,11 @@ class MainWindow(QMainWindow):
 
     def enter_kiosk(self):
         self.showFullScreen()
-        self._update_header_info()
+        self._update_window_title()
 
     def leave_kiosk(self):
         self.showNormal()
-        self._update_header_info()
+        self._update_window_title()
 
     def toggle_kiosk(self):
         if self.isFullScreen():

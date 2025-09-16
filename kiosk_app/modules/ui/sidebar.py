@@ -48,7 +48,8 @@ class Sidebar(QFrame):
 
         self._orientation = orientation if orientation in {"left", "top"} else "left"
         self._all_titles = titles[:]
-        self._thickness = max(72, width)
+        self._base_width = max(160, width)
+        self._thickness = self._base_width
         self._page = 0
         self._page_size = 4
         self._collapsed = False
@@ -180,6 +181,7 @@ class Sidebar(QFrame):
         self._apply_orientation_rules()
         self._update_logo()
         self._update_empty_state()
+        self._recalculate_thickness()
 
     def _apply_orientation_rules(self) -> None:
         if self._orientation == "top":
@@ -221,6 +223,7 @@ class Sidebar(QFrame):
         self._update_logo()
         self._update_page_controls()
         self._update_empty_state()
+        self._recalculate_thickness()
 
     def set_orientation(self, orientation: str) -> None:
         orientation = orientation if orientation in {"left", "top"} else "left"
@@ -234,6 +237,7 @@ class Sidebar(QFrame):
         self.set_active_global_index(current)
         self.set_collapsed(was_collapsed)
         self._apply_thickness()
+        self._recalculate_thickness()
 
     def set_hamburger_enabled(self, enabled: bool) -> None:
         self._enable_hamburger = enabled
@@ -317,6 +321,8 @@ class Sidebar(QFrame):
         self.updateGeometry()
         self._update_page_controls()
         self._update_empty_state()
+        if not collapsed:
+            self._recalculate_thickness()
 
     # ---------------------------------------------------------------- events
     def _on_burger_click(self) -> None:
@@ -386,6 +392,23 @@ class Sidebar(QFrame):
         self.list_widget.setVisible(show_list)
         self.empty_label.setVisible(not self._collapsed and not self._all_titles)
 
+    def _recalculate_thickness(self) -> None:
+        if self._orientation == "top":
+            return
+        fm = self.fontMetrics()
+        measurements = [fm.horizontalAdvance(title) for title in self._all_titles if title]
+        if getattr(self, "btn_toggle", None) and self.btn_toggle.isVisible():
+            measurements.append(fm.horizontalAdvance(self.btn_toggle.text()))
+        if getattr(self, "btn_settings", None) and self.btn_settings.isVisible():
+            measurements.append(fm.horizontalAdvance(self.btn_settings.text()))
+        longest = max(measurements, default=0)
+        padding = 96
+        desired = max(self._base_width, longest + padding)
+        if desired != self._thickness:
+            self._thickness = desired
+        if not self._collapsed:
+            self.setFixedWidth(self._thickness)
+
     # ---------------------------------------------------------------- locale
     def retranslate_ui(self) -> None:
         self.caption_label.setText(tr("Sources"))
@@ -398,4 +421,5 @@ class Sidebar(QFrame):
         self.btn_prev.setToolTip(tr("Previous page"))
         self.btn_next.setToolTip(tr("Next page"))
         self._update_page_controls()
+        self._recalculate_thickness()
 
