@@ -20,7 +20,7 @@ from modules.ui.window_spy import WindowSpyDialog
 from modules.services.browser_services import BrowserService, make_webview
 from modules.services.local_app_service import LocalAppWidget
 from modules.utils.config_loader import Config, SourceSpec, save_config, load_config, DEFAULT_SHORTCUTS
-from modules.utils.logger import get_logger
+from modules.utils.logger import get_logger, init_logging
 from modules.utils.i18n import tr, i18n
 
 
@@ -444,6 +444,7 @@ class MainWindow(QMainWindow):
 
     # ---------- Einstellungen ----------
     def open_settings(self):
+        logging_cfg = getattr(self.cfg, "logging", None)
         dlg = SettingsDialog(
             nav_orientation=self.cfg.ui.nav_orientation,
             enable_hamburger=self.cfg.ui.enable_hamburger,
@@ -453,6 +454,7 @@ class MainWindow(QMainWindow):
             logo_path=self.cfg.ui.logo_path,
             split_enabled=self.cfg.ui.split_enabled,
             shortcuts=self.cfg.ui.shortcuts,
+            remote_export=logging_cfg.remote_export if logging_cfg else None,
             backup_handler=self._backup_config,
             restore_handler=self._restore_config,
             parent=self
@@ -490,6 +492,18 @@ class MainWindow(QMainWindow):
             self.cfg.ui.language = res["language"]
             self.cfg.ui.logo_path = res["logo_path"]
             self.cfg.ui.shortcuts = res.get("shortcuts", self.cfg.ui.shortcuts)
+
+            remote_export_res = res.get("remote_export")
+            if remote_export_res is not None and logging_cfg is not None:
+                logging_cfg.remote_export = remote_export_res
+                try:
+                    init_logging(logging_cfg)
+                except Exception as ex:
+                    self.log.error(
+                        "failed to apply updated logging configuration: %s",
+                        ex,
+                        extra={"source": "logging"},
+                    )
 
             # Anwenden
             self.apply_theme(self.cfg.ui.theme)

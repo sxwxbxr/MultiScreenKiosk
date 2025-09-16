@@ -2,9 +2,65 @@ import threading
 import time
 import requests
 
-from PySide6.QtCore import QTimer, QObject, Signal
-from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtCore import QUrl
+try:  # pragma: no cover - optional Qt dependency
+    from PySide6.QtCore import QTimer, QObject, Signal, QUrl  # type: ignore
+    from PySide6.QtWebEngineWidgets import QWebEngineView  # type: ignore
+    _QT_AVAILABLE = True
+except Exception:  # pragma: no cover - testing fallback
+    _QT_AVAILABLE = False
+
+    class _DummySignal:
+        def connect(self, handler):
+            self._handler = handler  # type: ignore[attr-defined]
+
+        def emit(self, *args, **kwargs):
+            handler = getattr(self, "_handler", None)
+            if handler:
+                try:
+                    handler(*args, **kwargs)
+                except Exception:
+                    pass
+
+    def Signal(*_args, **_kwargs):  # type: ignore
+        return _DummySignal()
+
+    class QObject:  # type: ignore
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+    class QTimer:  # type: ignore
+        def __init__(self, *_args, **_kwargs):
+            self.timeout = _DummySignal()
+            self._interval = 0
+
+        def setInterval(self, value):
+            self._interval = value
+
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+    class QUrl:  # type: ignore
+        def __init__(self, url: str):
+            self._url = url
+
+    class QWebEngineView:  # type: ignore
+        def __init__(self):
+            self._zoom = 1.0
+            self._url = None
+            self.loadStarted = _DummySignal()
+            self.loadFinished = _DummySignal()
+
+        def setZoomFactor(self, value):
+            self._zoom = value
+
+        def setUrl(self, url):
+            self._url = url
+
+        def reload(self):
+            pass
 
 from modules.utils.logger import get_logger
 

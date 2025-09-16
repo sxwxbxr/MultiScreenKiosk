@@ -1,6 +1,8 @@
 # modules/ui/setup_dialog.py
 from __future__ import annotations
 from typing import List, Dict, Any, Optional
+import copy
+from dataclasses import asdict, is_dataclass
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -400,11 +402,38 @@ class SetupDialog(QDialog):
             }
         }
 
+        logging_section = self._extract_logging_section()
+        if logging_section:
+            new_cfg["logging"] = logging_section
+
         self._result = {
             "config": new_cfg,
             "should_save": bool(self.overwrite_cb.isChecked())
         }
         self.accept()
+
+    def _extract_logging_section(self) -> Optional[Dict[str, Any]]:
+        try:
+            logging_cfg = getattr(self._cfg, "logging", None)
+        except Exception:
+            logging_cfg = None
+
+        if logging_cfg is not None:
+            try:
+                if is_dataclass(logging_cfg):
+                    return asdict(logging_cfg)
+            except Exception:
+                pass
+            if isinstance(logging_cfg, dict):
+                return copy.deepcopy(logging_cfg)
+
+        try:
+            raw = self._cfg.get("logging")  # type: ignore[call-arg]
+        except Exception:
+            raw = None
+        if isinstance(raw, dict):
+            return copy.deepcopy(raw)
+        return None
 
     def results(self) -> Dict[str, Any]:
         # Rueckgabeformat immer gleich

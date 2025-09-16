@@ -75,6 +75,51 @@ class KioskSettings:
 
 
 @dataclass
+class RemoteLogDestination:
+    type: str = "http"                       # "http", "sftp" oder "email"
+    name: str = ""                           # Anzeigename fuer UI / Logs
+    enabled: bool = True
+    url: Optional[str] = None                # HTTP Ziel
+    method: str = "POST"
+    headers: Dict[str, str] = field(default_factory=dict)
+    verify_tls: bool = True
+    timeout: int = 30
+    username: Optional[str] = None
+    password: Optional[str] = None
+    token: Optional[str] = None
+    host: Optional[str] = None               # fuer SFTP / SMTP
+    port: Optional[int] = None
+    remote_path: Optional[str] = None        # Zielpfad bei SFTP
+    private_key: Optional[str] = None
+    passphrase: Optional[str] = None
+    email_from: Optional[str] = None
+    email_to: List[str] = field(default_factory=list)
+    email_cc: List[str] = field(default_factory=list)
+    email_bcc: List[str] = field(default_factory=list)
+    smtp_host: Optional[str] = None
+    smtp_port: Optional[int] = None
+    use_tls: bool = True
+    use_ssl: bool = False
+    subject: str = "Kiosk Logs"
+    body: str = "Attached kiosk log export."
+    schedule_minutes: Optional[int] = None   # optionales Intervall pro Ziel
+
+
+@dataclass
+class RemoteLogExportSettings:
+    enabled: bool = False
+    destinations: List[RemoteLogDestination] = field(default_factory=list)
+    include_history: int = 3
+    compress: bool = True
+    staging_dir: Optional[str] = None
+    retention_days: Optional[int] = None
+    retention_count: Optional[int] = 10
+    source_glob: str = "*.log"
+    schedule_minutes: Optional[int] = None
+    notify_failures: bool = True
+
+
+@dataclass
 class LoggingSettings:
     level: str = "INFO"                      # DEBUG, INFO, WARNING, ERROR
     fmt: str = "plain"                       # "plain" oder "json"
@@ -84,7 +129,7 @@ class LoggingSettings:
     rotate_backups: int = 5
     console: bool = True
     qt_messages: bool = True
-    # Hinweis: weitere Felder aus deinem Logger koennen hier spaeter ergaenzt werden
+    remote_export: RemoteLogExportSettings = field(default_factory=RemoteLogExportSettings)
 
 
 @dataclass
@@ -106,6 +151,8 @@ __all__ = [
     "UISettings",
     "KioskSettings",
     "LoggingSettings",
+    "RemoteLogExportSettings",
+    "RemoteLogDestination",
     "UIConfig",
     "KioskConfig",
     "LoggingConfig",
@@ -142,6 +189,43 @@ def _as_int(d: Dict[str, Any], key: str, default: int) -> int:
         return int(d.get(key, default))
     except Exception:
         return default
+
+
+def _as_list(value: Any) -> List[str]:
+    """Normalisiert Listen- oder CSV-Eingaben zu einer Stringliste."""
+    items: List[str] = []
+    if value is None:
+        return items
+    if isinstance(value, (list, tuple, set)):
+        raw_iter = value
+    else:
+        raw_iter = [value]
+    for entry in raw_iter:
+        if entry is None:
+            continue
+        if isinstance(entry, str):
+            parts = entry.split(",")
+        else:
+            parts = [str(entry)]
+        for part in parts:
+            s = part.strip()
+            if s:
+                items.append(s)
+    return items
+
+
+def _opt_str(value: Any) -> Optional[str]:
+    s = _safe_str(value)
+    return s or None
+
+
+def _as_opt_int(value: Any) -> Optional[int]:
+    try:
+        if value is None:
+            return None
+        return int(value)
+    except Exception:
+        return None
 
 # =========================
 # Parser
@@ -275,6 +359,104 @@ def _parse_kiosk(data: Dict[str, Any]) -> KioskSettings:
     )
 
 
+def _parse_remote_destinations(raw: Dict[str, Any]) -> List[RemoteLogDestination]:
+    items = raw.get("destinations") if isinstance(raw, dict) else None
+    destinations: List[RemoteLogDestination] = []
+    if not isinstance(items, list):
+        return destinations
+
+    for entry in items:
+        if not isinstance(entry, dict):
+            continue
+        typ = (_safe_str(entry.get("type")) or "http").lower()
+        if typ not in {"http", "sftp", "email"}:
+            continue
+
+        name = _safe_str(entry.get("name") or "") or typ.upper()
+        headers_data = entry.get("headers")
+        headers: Dict[str, str] = {}
+        if isinstance(headers_data, dict):
+            for k, v in headers_data.items():
+                try:
+                    headers[str(k)] = _safe_str(v)
+                except Exception:
+                    continue
+
+        dest = RemoteLogDestination(
+            type=typ,
+            name=name,
+            enabled=_as_bool(entry, "enabled", True),
+            url=_opt_str(entry.get("url") or entry.get("endpoint")),
+            method=_safe_str(entry.get("method") or "POST").upper() if typ == "http" else _safe_str(entry.get("method") or "POST"),
+            headers=headers,
+            verify_tls=_as_bool(entry, "verify_tls", True),
+            timeout=_as_int(entry, "timeout", 30),
+            username=_opt_str(entry.get("username") or entry.get("user")),
+            password=_opt_str(entry.get("password")),
+            token=_opt_str(entry.get("token") or entry.get("bearer_token")),
+            host=_opt_str(entry.get("host") or entry.get("server")),
+            port=_as_opt_int(entry.get("port")),
+            remote_path=_opt_str(entry.get("remote_path") or entry.get("path")),
+            private_key=_opt_str(entry.get("private_key") or entry.get("key_file")),
+            passphrase=_opt_str(entry.get("passphrase") or entry.get("key_passphrase")),
+            email_from=_opt_str(entry.get("email_from") or entry.get("from")),
+            email_to=_as_list(entry.get("email_to") or entry.get("recipients")),
+            email_cc=_as_list(entry.get("email_cc")),
+            email_bcc=_as_list(entry.get("email_bcc")),
+            smtp_host=_opt_str(entry.get("smtp_host") or entry.get("host")),
+            smtp_port=_as_opt_int(entry.get("smtp_port") or entry.get("port")),
+            use_tls=_as_bool(entry, "use_tls", True),
+            use_ssl=_as_bool(entry, "use_ssl", False),
+            subject=_safe_str(entry.get("subject") or "Kiosk Logs"),
+            body=_safe_str(entry.get("body") or entry.get("message") or "Attached kiosk log export."),
+            schedule_minutes=_as_opt_int(entry.get("schedule_minutes")),
+        )
+        destinations.append(dest)
+
+    return destinations
+
+
+def _parse_remote_export(lg: Dict[str, Any]) -> RemoteLogExportSettings:
+    raw = lg.get("remote_export") or {}
+    if not isinstance(raw, dict):
+        raw = {}
+
+    if "retention_count" in raw:
+        retention_count_val = _as_opt_int(raw.get("retention_count"))
+        if retention_count_val is None or retention_count_val < 0:
+            retention_count = None
+        else:
+            retention_count = retention_count_val
+    else:
+        retention_count = 10
+
+    if "retention_days" in raw:
+        retention_days_val = _as_opt_int(raw.get("retention_days"))
+        if retention_days_val is None or retention_days_val < 0:
+            retention_days = None
+        else:
+            retention_days = retention_days_val
+    else:
+        retention_days = None
+
+    schedule_minutes = _as_opt_int(raw.get("schedule_minutes"))
+    if schedule_minutes is not None and schedule_minutes <= 0:
+        schedule_minutes = None
+
+    return RemoteLogExportSettings(
+        enabled=_as_bool(raw, "enabled", False),
+        destinations=_parse_remote_destinations(raw),
+        include_history=_as_int(raw, "include_history", 3),
+        compress=_as_bool(raw, "compress", True),
+        staging_dir=_opt_str(raw.get("staging_dir")),
+        retention_days=retention_days,
+        retention_count=retention_count,
+        source_glob=_safe_str(raw.get("source_glob") or "*.log"),
+        schedule_minutes=schedule_minutes,
+        notify_failures=_as_bool(raw, "notify_failures", True),
+    )
+
+
 def _parse_logging(data: Dict[str, Any]) -> LoggingSettings:
     lg = data.get("logging") or {}
     return LoggingSettings(
@@ -286,6 +468,7 @@ def _parse_logging(data: Dict[str, Any]) -> LoggingSettings:
         rotate_backups=_as_int(lg, "rotate_backups", 5),
         console=_as_bool(lg, "console", True),
         qt_messages=_as_bool(lg, "qt_messages", True),
+        remote_export=_parse_remote_export(lg),
     )
 
 # =========================

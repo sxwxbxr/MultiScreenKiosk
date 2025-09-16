@@ -1,21 +1,21 @@
 from __future__ import annotations
 from typing import Optional, Dict, Any, List, Callable
-
-import os
+from copy import deepcopy
 from pathlib import Path
-from PySide6.QtCore import Qt, QPoint, QTimer
+from PySide6.QtCore import Qt, QPoint
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QComboBox, QCheckBox, QLineEdit, QFileDialog, QTextEdit, QMessageBox,
-    QKeySequenceEdit
+    QComboBox, QCheckBox, QLineEdit, QFileDialog, QMessageBox,
+    QKeySequenceEdit, QMenu
 )
 
 # Log Viewer und Log Pfad
 from modules.ui.log_viewer import LogViewer
-from modules.utils.logger import get_log_path, get_logger
+from modules.utils.logger import get_logger
 from modules.utils.i18n import tr, i18n
-from modules.utils.config_loader import DEFAULT_SHORTCUTS
+from modules.utils.config_loader import DEFAULT_SHORTCUTS, RemoteLogExportSettings
+from modules.ui.remote_export_dialog import RemoteExportDialog
 
 # Fenster Spy optional importieren
 try:
@@ -25,106 +25,6 @@ except Exception:
     _HAVE_SPY = False
 
 _log = get_logger(__name__)
-
-
-def _human_size(n: int) -> str:
-    units = ["B", "KB", "MB", "GB", "TB"]
-    size = float(max(0, n))
-    idx = 0
-    while size >= 1024.0 and idx < len(units) - 1:
-        size /= 1024.0
-        idx += 1
-    if idx == 0:
-        return f"{int(size)} {units[idx]}"
-    return f"{size:.2f} {units[idx]}"
-
-
-class LogStatsDialog(QDialog):
-    """Live Log Statistik mit Dateigroesse und Level Zaehlern."""
-    def __init__(self, log_path: str, parent: Optional[QWidget] = None):
-        super().__init__(parent)
-        self._path = log_path
-        self.setWindowTitle(tr("Log Statistics"))
-        self.setModal(False)
-        self.setMinimumSize(520, 360)
-
-        layout = QVBoxLayout(self)
-        self.lbl_info = QLabel(self)
-        layout.addWidget(self.lbl_info)
-
-        self.view = QTextEdit(self)
-        self.view.setReadOnly(True)
-        layout.addWidget(self.view, 1)
-
-        btns = QHBoxLayout()
-        btns.addStretch(1)
-        self.btn_close = QPushButton(tr("Close"), self)
-        self.btn_close.clicked.connect(self.close)
-        btns.addWidget(self.btn_close)
-        layout.addLayout(btns)
-
-        self._timer = QTimer(self)
-        self._timer.setInterval(1000)
-        self._timer.timeout.connect(self._refresh)
-        self._timer.start()
-
-        i18n.language_changed.connect(lambda _l: self._apply_translations())
-        self._refresh()
-
-    def _apply_translations(self):
-        self.setWindowTitle(tr("Log Statistics"))
-        self.btn_close.setText(tr("Close"))
-
-    def closeEvent(self, ev):
-        try:
-            self._timer.stop()
-        except Exception:
-            pass
-        super().closeEvent(ev)
-
-    def _refresh(self):
-        path = self._path
-        info = warn = err = dbg = 0
-        size = 0
-        exists = os.path.isfile(path)
-        if exists:
-            try:
-                size = os.path.getsize(path)
-            except Exception:
-                size = 0
-        try:
-            if exists:
-                with open(path, "r", encoding="utf-8", errors="ignore") as f:
-                    for line in f:
-                        u = line.upper()
-                        if " DEBUG " in u or u.startswith("DEBUG") or '"LEVEL": "DEBUG"' in u:
-                            dbg += 1
-                        elif " INFO " in u or u.startswith("INFO") or '"LEVEL": "INFO"' in u:
-                            info += 1
-                        elif " WARNING " in u or u.startswith("WARNING") or '"LEVEL": "WARNING"' in u:
-                            warn += 1
-                        elif " ERROR " in u or u.startswith("ERROR") or '"LEVEL": "ERROR"' in u:
-                            err += 1
-            total = info + warn + err + dbg
-            human = _human_size(size)
-            self.lbl_info.setText(f"Datei: {path}")
-            text = (
-                f"Groesse: {human} ({size} Bytes)\n"
-                f"Gesamt:  {total}\n"
-                f"Info:    {info}\n"
-                f"Warn:    {warn}\n"
-                f"Error:   {err}\n"
-                f"Debug:   {dbg}"
-            )
-        except FileNotFoundError:
-            self.lbl_info.setText(f"Datei: {path}")
-            text = "Keine Logdatei gefunden."
-        except Exception as ex:
-            self.lbl_info.setText(f"Datei: {path}")
-            text = f"Fehler beim Lesen der Logdatei:\n{ex}"
-
-        self.view.setPlainText(text)
-
 
 class SettingsDialog(QDialog):
     """
@@ -138,6 +38,7 @@ class SettingsDialog(QDialog):
         "theme": str,
         "logo_path": str,
         "shortcuts": Dict[str, str],
+        "remote_export": RemoteLogExportSettings,
         "quit_requested": bool
       }
     """
@@ -151,6 +52,7 @@ class SettingsDialog(QDialog):
                  logo_path: str,
                  split_enabled: bool,
                  shortcuts: Optional[Dict[str, str]] = None,
+                 remote_export: Optional[RemoteLogExportSettings] = None,
                  backup_handler: Optional[Callable[[Path], None]] = None,
                  restore_handler: Optional[Callable[[Path], Any]] = None,
                  parent: Optional[QWidget] = None):
@@ -163,6 +65,9 @@ class SettingsDialog(QDialog):
         self.setMinimumSize(640, 380)
         self._backup_handler = backup_handler
         self._restore_handler = restore_handler
+        self._remote_export_settings = (
+            deepcopy(remote_export) if remote_export is not None else RemoteLogExportSettings()
+        )
 
         # ---------- Titlebar ----------
         bar = QWidget(self)
@@ -285,20 +190,22 @@ class SettingsDialog(QDialog):
 
         # ---------- Footer Aktionen ----------
         footer = QHBoxLayout()
-        self.btn_backup = QPushButton("", self)
-        self.btn_backup.clicked.connect(self._trigger_backup)
-        self.btn_restore = QPushButton("", self)
-        self.btn_restore.clicked.connect(self._trigger_restore)
+        self.btn_config = QPushButton("", self)
+        self._config_menu = QMenu(self.btn_config)
+        self.action_backup = self._config_menu.addAction("")
+        self.action_backup.triggered.connect(self._trigger_backup)
+        self.action_restore = self._config_menu.addAction("")
+        self.action_restore.triggered.connect(self._trigger_restore)
+
         self.btn_logs = QPushButton("", self)
-        self.btn_stats = QPushButton("", self)
+        self.btn_remote_export = QPushButton("", self)
         self.btn_spy = QPushButton("", self)
         self.btn_quit = QPushButton("", self)
         self.btn_cancel = QPushButton("", self)
         self.btn_ok = QPushButton("", self)
-        footer.addWidget(self.btn_backup)
-        footer.addWidget(self.btn_restore)
+        footer.addWidget(self.btn_config)
         footer.addWidget(self.btn_logs)
-        footer.addWidget(self.btn_stats)
+        footer.addWidget(self.btn_remote_export)
         footer.addWidget(self.btn_spy)
         footer.addStretch(1)
         footer.addWidget(self.btn_quit)
@@ -316,8 +223,9 @@ class SettingsDialog(QDialog):
         # Events
         self.btn_cancel.clicked.connect(self.reject)
         self.btn_ok.clicked.connect(self._accept_save)
+        self.btn_config.clicked.connect(self._open_config_menu)
         self.btn_logs.clicked.connect(self._open_logs_window)
-        self.btn_stats.clicked.connect(self._open_stats_window)
+        self.btn_remote_export.clicked.connect(self._open_remote_export_dialog)
         self.btn_quit.clicked.connect(self._request_quit)
         self.btn_spy.clicked.connect(self._open_window_spy)
 
@@ -327,13 +235,11 @@ class SettingsDialog(QDialog):
         # Child Fenster Referenzen
         self._child_windows: List[QDialog] = []
 
-        if not self._backup_handler:
-            self.btn_backup.setVisible(False)
-        if not self._restore_handler:
-            self.btn_restore.setVisible(False)
+        self._refresh_config_actions()
 
         i18n.language_changed.connect(lambda _l: self._apply_translations())
         self._apply_translations()
+        self._update_remote_button_caption()
 
     # ------- Actions -------
     def _accept_save(self):
@@ -359,20 +265,50 @@ class SettingsDialog(QDialog):
             "language": self.language_combo.currentData(),
             "logo_path": self.logo_edit.text().strip(),
             "shortcuts": merged,
+            "remote_export": deepcopy(self._remote_export_settings),
             "quit_requested": False,
         }
         self.accept()
 
+    def _update_remote_button_caption(self):
+        status = tr("enabled") if getattr(self._remote_export_settings, "enabled", False) else tr("disabled")
+        count = len(getattr(self._remote_export_settings, "destinations", []) or [])
+        self.btn_remote_export.setText(tr("Remote export ({status})", status=status))
+        self.btn_remote_export.setToolTip(tr("{count} destinations configured", count=count))
+
+    def _refresh_config_actions(self):
+        have_backup = bool(self._backup_handler)
+        have_restore = bool(self._restore_handler)
+        if hasattr(self, "action_backup"):
+            self.action_backup.setVisible(have_backup)
+            self.action_backup.setEnabled(have_backup)
+        if hasattr(self, "action_restore"):
+            self.action_restore.setVisible(have_restore)
+            self.action_restore.setEnabled(have_restore)
+        show_button = have_backup or have_restore
+        self.btn_config.setVisible(show_button)
+        self.btn_config.setEnabled(show_button)
+
+    def _open_config_menu(self):
+        actions = [act for act in self._config_menu.actions() if act.isVisible() and act.isEnabled()]
+        if not actions:
+            return
+        if len(actions) == 1:
+            actions[0].trigger()
+            return
+        pos = self.btn_config.mapToGlobal(self.btn_config.rect().bottomLeft())
+        self._config_menu.exec(pos)
+
+    def _open_remote_export_dialog(self):
+        dlg = RemoteExportDialog(self._remote_export_settings, self)
+        if dlg.exec():
+            result = dlg.result_settings()
+            if result is not None:
+                self._remote_export_settings = deepcopy(result)
+                self._update_remote_button_caption()
+
     def _open_logs_window(self):
         dlg = LogViewer(self)
-        dlg.setModal(False)
-        dlg.setAttribute(Qt.WA_DeleteOnClose, True)
-        dlg.show()
-        self._child_windows.append(dlg)
-
-    def _open_stats_window(self):
-        path = get_log_path()
-        dlg = LogStatsDialog(path, self)
         dlg.setModal(False)
         dlg.setAttribute(Qt.WA_DeleteOnClose, True)
         dlg.show()
@@ -497,6 +433,7 @@ class SettingsDialog(QDialog):
                 "theme": self.theme_combo.currentData(),
                 "language": self.language_combo.currentData(),
                 "logo_path": self.logo_edit.text().strip(),
+                "remote_export": deepcopy(self._remote_export_settings),
                 "quit_requested": True,
             }
             self.accept()
@@ -522,6 +459,7 @@ class SettingsDialog(QDialog):
             "language": self.language_combo.currentData(),
             "logo_path": self.logo_edit.text().strip(),
             "shortcuts": merged,
+            "remote_export": deepcopy(self._remote_export_settings),
             "quit_requested": False,
         }
 
@@ -603,13 +541,21 @@ class SettingsDialog(QDialog):
             lbl.setText(names.get(key, key))
         if self.info_lbl is not None:
             self.info_lbl.setText(tr("Note: Split screen is disabled. Switch via the sidebar, Ctrl+Q is inactive."))
-        if hasattr(self, "btn_backup"):
-            self.btn_backup.setText(tr("Backup config"))
-        if hasattr(self, "btn_restore"):
-            self.btn_restore.setText(tr("Restore config"))
+        config_label = tr("Configuration")
+        if self._backup_handler and self._restore_handler:
+            config_label = tr("Backup / restore config")
+        elif self._backup_handler:
+            config_label = tr("Backup config")
+        elif self._restore_handler:
+            config_label = tr("Restore config")
+        self.btn_config.setText(config_label)
+        self.action_backup.setText(tr("Backup config"))
+        self.action_restore.setText(tr("Restore config"))
         self.btn_logs.setText(tr("Logs"))
-        self.btn_stats.setText(tr("Log Statistics"))
+        self.btn_remote_export.setText(tr("Remote export"))
         self.btn_spy.setText(tr("Window Spy"))
         self.btn_quit.setText(tr("Quit"))
         self.btn_cancel.setText(tr("Cancel"))
         self.btn_ok.setText(tr("Save"))
+        self._update_remote_button_caption()
+        self._refresh_config_actions()
