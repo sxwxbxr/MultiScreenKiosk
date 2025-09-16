@@ -14,8 +14,9 @@ from modules.utils.logger import init_logging, get_logger
 from modules.ui.app_state import AppState
 from modules.ui.main_window import MainWindow
 from modules.ui.setup_dialog import SetupDialog
+from modules.ui.splash_screen import SplashScreen
 from modules.utils.config_loader import Config
-from modules.utils.i18n import i18n
+from modules.utils.i18n import i18n, tr
 
 
 def default_cfg_path() -> Path:
@@ -129,11 +130,35 @@ def main() -> int:
     except Exception:
         pass
 
+    # Splash Screen
+    splash = None
+    assets_dir = Path(__file__).resolve().parent / "assets"
+    splash_json = assets_dir / "tZuFzJlE5P.json"
+    splash_gif = assets_dir / "tZuFzJlE5P.gif"
+    try:
+        splash = SplashScreen(
+            json_path=splash_json,
+            gif_path=splash_gif,
+            message=tr("Preparing your displays…"),
+        )
+        splash.show()
+        app.processEvents()
+    except Exception as ex:
+        log.warning("could not display splash screen: %s", ex, extra={"source": "main"})
+        splash = None
+
     # App State
     state = AppState()
 
     # Hauptfenster erstellen
-    win = MainWindow(cfg, state, config_path=cfg_path)
+    try:
+        win = MainWindow(cfg, state, config_path=cfg_path)
+    except Exception:
+        if splash:
+            splash.finish(None)
+        raise
+    if splash:
+        win.initial_load_finished.connect(lambda: splash.finish(win))
     try:
         # Gewuenschten Monitor setzen
         if cfg.kiosk:
@@ -146,7 +171,10 @@ def main() -> int:
 
     win.show()
     log.info("ui shown", extra={"source": "main"})
-    return app.exec()
+    result = app.exec()
+    if splash:
+        splash.finish(win)
+    return result
 
 
 if __name__ == "__main__":
