@@ -141,6 +141,11 @@ Example:
 }
 ```
 
+### Backup & Restore
+
+* Open **Settings** in the main window and click **Backup config** to export the active configuration as a JSON file (default name `config.json`).
+* Click **Restore config** to import a previously saved snapshot. The dialog validates the file, applies the configuration immediately, and rolls back to the previous settings if validation or saving fails.
+
 ---
 
 ## Embedding local apps (tips)

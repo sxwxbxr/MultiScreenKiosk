@@ -122,7 +122,7 @@ def main() -> int:
     state = AppState()
 
     # Hauptfenster erstellen
-    win = MainWindow(cfg, state)
+    win = MainWindow(cfg, state, config_path=cfg_path)
     try:
         # Gewuenschten Monitor setzen
         if cfg.kiosk:
