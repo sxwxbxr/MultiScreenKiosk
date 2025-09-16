@@ -105,7 +105,13 @@ class Sidebar(QWidget):
         self.setObjectName("Sidebar")
         self._build_ui()
         self._refresh_page_buttons()
-        i18n.language_changed.connect(lambda _l: self.retranslate_ui())
+        i18n.language_changed.connect(self._handle_language_changed)
+        self.retranslate_ui()
+
+    def _handle_language_changed(self, _lang: str) -> None:
+        """Update translations when the application language changes."""
+        # Die Verbindung mit einer Instanzmethode sorgt dafuer, dass Qt sie
+        # automatisch trennt, sobald das Sidebar-Widget zerstoert wird.
         self.retranslate_ui()
 
     # ---------- interne Helfer ----------
