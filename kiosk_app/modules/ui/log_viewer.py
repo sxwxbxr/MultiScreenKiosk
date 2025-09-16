@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QCheckBox, QPushButton, QTextEdit, QFileDialog, QMessageBox, QWidget
 )
 
+from modules.ui.theme import get_palette, build_dialog_stylesheet
 from modules.utils.logger import get_log_path, get_log_bridge
 from modules.utils.i18n import tr, i18n
 
@@ -32,12 +33,15 @@ def _human_size(n: int) -> str:
 class LogStatsDialog(QDialog):
     """Live Log Statistik mit Dateigroesse und Level Zaehlern."""
 
-    def __init__(self, log_path: str, parent: Optional[QWidget] = None):
+    def __init__(self, log_path: str, theme: str | None = None, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self._path = log_path
         self.setWindowTitle(tr("Log Statistics"))
         self.setModal(False)
         self.setMinimumSize(520, 360)
+
+        palette = get_palette(theme)
+        self.setStyleSheet(build_dialog_stylesheet(palette))
 
         layout = QVBoxLayout(self)
         self.lbl_info = QLabel(self)
@@ -50,6 +54,7 @@ class LogStatsDialog(QDialog):
         btns = QHBoxLayout()
         btns.addStretch(1)
         self.btn_close = QPushButton(tr("Close"), self)
+        self.btn_close.setProperty("accent", True)
         self.btn_close.clicked.connect(self.close)
         btns.addWidget(self.btn_close)
         layout.addLayout(btns)
@@ -119,11 +124,15 @@ class LogStatsDialog(QDialog):
 
 class LogViewer(QDialog):
     """Einfacher Log Viewer mit Filtern und Live Update."""
-    def __init__(self, parent=None):
+    def __init__(self, parent: Optional[QWidget] = None, theme: str | None = None):
         super().__init__(parent)
         self.setWindowTitle(tr("Logs"))
         self.setModal(False)
         self.setMinimumSize(800, 480)
+
+        self._theme = theme or "light"
+        self._palette = get_palette(self._theme)
+        self.setStyleSheet(build_dialog_stylesheet(self._palette))
 
         self._path = get_log_path()
         self._buffer: List[str] = []   # Rohzeilen fuer Refilter
@@ -358,7 +367,7 @@ class LogViewer(QDialog):
         self.btn_stats.setText(tr("Log Statistics"))
 
     def _open_stats_window(self):
-        dlg = LogStatsDialog(self._path, self)
+        dlg = LogStatsDialog(self._path, self._theme, self)
         dlg.setModal(False)
         dlg.setAttribute(Qt.WA_DeleteOnClose, True)
         dlg.show()

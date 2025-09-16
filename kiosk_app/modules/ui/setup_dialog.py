@@ -11,6 +11,8 @@ from PySide6.QtWidgets import (
     QSpinBox, QGridLayout
 )
 
+from modules.ui.theme import get_palette, build_dialog_stylesheet
+
 
 # ---------- Hilfs Widgets ----------
 
@@ -257,25 +259,8 @@ class SetupDialog(QDialog):
         return "light"
 
     def apply_theme(self, theme: str):
-        """Einfaches hell/dunkel Styling, analog zur Hauptapp."""
-        if str(theme).lower() == "dark":
-            self.setStyleSheet("""
-                QWidget { background: #121212; color: #e0e0e0; }
-                QLineEdit, QComboBox { background: #1b1b1b; border: 1px solid #2a2a2a; padding: 6px 8px; border-radius: 8px; }
-                QCheckBox::indicator { width: 16px; height: 16px; border: 1px solid #5a5a5a; background: #2a2a2a; }
-                QCheckBox::indicator:checked { background: #3b82f6; border: 1px solid #3b82f6; }
-                QPushButton { background: #1f1f1f; border: 1px solid #2a2a2a; padding: 8px 12px; border-radius: 10px; }
-                QPushButton:hover { border-color: #3a3a3a; }
-            """)
-        else:
-            self.setStyleSheet("""
-                QWidget { background: #f4f4f4; color: #202020; }
-                QLineEdit, QComboBox { background: #ffffff; border: 1px solid #d0d0d0; padding: 6px 8px; border-radius: 8px; }
-                QCheckBox::indicator { width: 16px; height: 16px; border: 1px solid #999; background: #fff; }
-                QCheckBox::indicator:checked { background: #0078d4; border: 1px solid #0078d4; }
-                QPushButton { background: #ffffff; border: 1px solid #d0d0d0; padding: 8px 12px; border-radius: 10px; }
-                QPushButton:hover { border-color: #bcbcbc; }
-            """)
+        palette = get_palette(theme)
+        self.setStyleSheet(build_dialog_stylesheet(palette))
 
     # -------- Layout Zeilen --------
 

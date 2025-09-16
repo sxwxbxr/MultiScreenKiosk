@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 
 # Log Viewer und Log Pfad
 from modules.ui.log_viewer import LogViewer
+from modules.ui.theme import get_palette, build_dialog_stylesheet
 from modules.utils.logger import get_logger
 from modules.utils.i18n import tr, i18n
 from modules.utils.config_loader import DEFAULT_SHORTCUTS, RemoteLogExportSettings
@@ -203,6 +204,8 @@ class SettingsDialog(QDialog):
         self.btn_quit = QPushButton("", self)
         self.btn_cancel = QPushButton("", self)
         self.btn_ok = QPushButton("", self)
+        self.btn_ok.setProperty("accent", True)
+        self.btn_quit.setProperty("destructive", True)
         footer.addWidget(self.btn_config)
         footer.addWidget(self.btn_logs)
         footer.addWidget(self.btn_remote_export)
@@ -230,7 +233,10 @@ class SettingsDialog(QDialog):
         self.btn_spy.clicked.connect(self._open_window_spy)
 
         # Styling
-        self._apply_style()
+        self._palette = get_palette(theme)
+        self._apply_style(self._palette)
+
+        self.theme_combo.currentIndexChanged.connect(self._on_theme_preview)
 
         # Child Fenster Referenzen
         self._child_windows: List[QDialog] = []
@@ -308,7 +314,7 @@ class SettingsDialog(QDialog):
                 self._update_remote_button_caption()
 
     def _open_logs_window(self):
-        dlg = LogViewer(self)
+        dlg = LogViewer(self, self.theme_combo.currentData())
         dlg.setModal(False)
         dlg.setAttribute(Qt.WA_DeleteOnClose, True)
         dlg.show()
@@ -492,21 +498,15 @@ class SettingsDialog(QDialog):
         super().mouseReleaseEvent(e)
 
     # ------- Style -------
-    def _apply_style(self):
-        self.setStyleSheet("""
-            #titlebar { background: rgba(127,127,127,0.08); }
-            QLabel { font-size: 14px; }
-            QLineEdit { border: 1px solid rgba(128,128,128,0.35); border-radius: 8px; padding: 6px 8px; }
-            QPushButton {
-                background: rgba(255,255,255,0.04);
-                border: 1px solid rgba(128,128,128,0.35);
-                border-radius: 10px; padding: 8px 12px;
-            }
-            QPushButton:hover { border-color: rgba(128,128,128,0.55); }
-            QPushButton:pressed { background: rgba(255,255,255,0.08); }
-            QCheckBox::indicator { width: 18px; height: 18px; border-radius: 4px; border:1px solid rgba(128,128,128,0.45); background: rgba(255,255,255,0.03); }
-            QCheckBox::indicator:checked { background:#0a84ff; border-color:#0a84ff; }
-        """)
+    def _apply_style(self, palette=None):
+        if palette is not None:
+            self._palette = palette
+        self.setStyleSheet(build_dialog_stylesheet(self._palette))
+
+    def _on_theme_preview(self):
+        selected_theme = self.theme_combo.currentData()
+        palette = get_palette(selected_theme)
+        self._apply_style(palette)
 
     def _apply_translations(self):
         self.title_lbl.setText(tr("Settings"))

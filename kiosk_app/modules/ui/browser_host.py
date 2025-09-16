@@ -21,6 +21,7 @@ class BrowserHostWidget(QWidget):
         self.stack.setSpacing(0)
 
         self.placeholder = QLabel("", self)
+        self.placeholder.setObjectName("BrowserPlaceholder")
         self.placeholder.setAlignment(Qt.AlignCenter)
 
         self.movie: Optional[QMovie] = None

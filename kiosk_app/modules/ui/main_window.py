@@ -10,7 +10,8 @@ from PySide6.QtCore import Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QShortcut, QKeySequence
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QStackedWidget,
-    QGridLayout, QLabel, QApplication, QToolButton, QMenu, QMessageBox
+    QGridLayout, QLabel, QApplication, QToolButton, QMenu, QMessageBox,
+    QFrame, QPushButton
 )
 
 from modules.ui.app_state import AppState, ViewMode
@@ -21,6 +22,7 @@ from modules.ui.window_spy import WindowSpyDialog
 from modules.services.auto_update import AutoUpdateService, UpdateResult
 from modules.services.browser_services import BrowserService, make_webview
 from modules.services.local_app_service import LocalAppWidget
+from modules.ui.theme import get_palette, build_application_stylesheet, ThemePalette
 from modules.utils.config_loader import Config, SourceSpec, save_config, load_config, DEFAULT_SHORTCUTS
 from modules.utils.logger import get_logger, init_logging
 from modules.utils.i18n import tr, i18n
@@ -86,8 +88,8 @@ class MainWindow(QMainWindow):
 
         self.grid = QWidget(self)
         self.grid_layout = QGridLayout(self.grid)
-        self.grid_layout.setContentsMargins(0, 0, 0, 0)
-        self.grid_layout.setSpacing(0)
+        self.grid_layout.setContentsMargins(12, 12, 12, 12)
+        self.grid_layout.setSpacing(12)
 
         self.mode_stack = QStackedWidget(self)
         self.mode_stack.addWidget(self.single_host)  # 0
@@ -95,10 +97,26 @@ class MainWindow(QMainWindow):
 
         # Overlay Burger
         self.overlay_burger = QToolButton(self)
+        self.overlay_burger.setObjectName("OverlayBurger")
         self.overlay_burger.setText("☰")
         self.overlay_burger.setToolTip("")
         self.overlay_burger.setVisible(False)
         self.overlay_burger.clicked.connect(self._open_overlay_menu)
+
+        # Header references (created in _build_root_and_sidebar)
+        self.header_bar: QWidget | None = None
+        self.header_title: QLabel | None = None
+        self.header_subtitle: QLabel | None = None
+        self.mode_badge: QLabel | None = None
+        self.kiosk_badge: QLabel | None = None
+        self.btn_mode_toggle: QPushButton | None = None
+        self.btn_header_settings: QToolButton | None = None
+        self.btn_kiosk: QToolButton | None = None
+        self.content_card: QFrame | None = None
+        self.content_container: QWidget | None = None
+
+        # Theme palette before building the root widgets
+        self._palette: ThemePalette = get_palette(self.cfg.ui.theme)
 
         # Root und Sidebar
         self._build_root_and_sidebar()
@@ -128,15 +146,17 @@ class MainWindow(QMainWindow):
         self._maybe_start_auto_update()
 
     # ---------- Root und Sidebar ----------
-    def _build_root_and_sidebar(self):
+    def _build_root_and_sidebar(self) -> None:
         titles = [s.name for s in self.sources]
 
         old = self.centralWidget()
         if old:
             old.deleteLater()
 
+        orientation = self.cfg.ui.nav_orientation if self.cfg.ui.nav_orientation in {"left", "top"} else "left"
+
         central = QWidget(self)
-        if self.cfg.ui.nav_orientation == "top":
+        if orientation == "top":
             root = QVBoxLayout(central)
         else:
             root = QHBoxLayout(central)
@@ -146,22 +166,161 @@ class MainWindow(QMainWindow):
         self.sidebar = Sidebar(
             titles=titles,
             width=self.cfg.ui.sidebar_width,
-            orientation=self.cfg.ui.nav_orientation,
+            orientation=orientation,
             enable_hamburger=self.cfg.ui.enable_hamburger,
             logo_path=self.cfg.ui.logo_path,
-            split_enabled=self.cfg.ui.split_enabled
+            split_enabled=self.cfg.ui.split_enabled,
         )
+        self.sidebar.apply_palette(self._palette)
         self.sidebar.view_selected.connect(self.on_select_view)
         self.sidebar.toggle_mode.connect(self.on_toggle_mode)
         self.sidebar.page_changed.connect(self.on_page_changed)
         self.sidebar.request_settings.connect(self.open_settings)
         self.sidebar.collapsed_changed.connect(self.on_sidebar_collapsed_changed)
 
-        root.addWidget(self.sidebar)
-        root.addWidget(self.mode_stack, 1)
+        if orientation == "top":
+            root.addWidget(self.sidebar)
+            content = self._build_main_content(orientation)
+            root.addWidget(content, 1)
+        else:
+            root.addWidget(self.sidebar)
+            content = self._build_main_content(orientation)
+            root.addWidget(content, 1)
+
+        self.content_container = content
         self.setCentralWidget(central)
 
+        if self.num_sources:
+            self.sidebar.set_active_global_index(min(self.state.active_index, self.num_sources - 1))
+
         self._place_overlay_burger()
+        self._update_header_info()
+
+    def _build_main_content(self, orientation: str) -> QWidget:
+        container = QWidget(self)
+        margins = (24, 24, 24, 24) if orientation != "top" else (24, 16, 24, 24)
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(*margins)
+        layout.setSpacing(18)
+
+        self.header_bar = QWidget(container)
+        self.header_bar.setObjectName("HeaderBar")
+        header_layout = QHBoxLayout(self.header_bar)
+        header_layout.setContentsMargins(24, 18, 24, 18)
+        header_layout.setSpacing(16)
+
+        header_texts = QVBoxLayout()
+        header_texts.setContentsMargins(0, 0, 0, 0)
+        header_texts.setSpacing(4)
+
+        self.header_title = QLabel("", self.header_bar)
+        self.header_title.setObjectName("HeaderTitle")
+        header_texts.addWidget(self.header_title)
+
+        self.header_subtitle = QLabel("", self.header_bar)
+        self.header_subtitle.setObjectName("HeaderSubtitle")
+        self.header_subtitle.setWordWrap(True)
+        header_texts.addWidget(self.header_subtitle)
+
+        header_layout.addLayout(header_texts, 1)
+
+        self.mode_badge = QLabel("", self.header_bar)
+        self.mode_badge.setObjectName("ModeBadge")
+        header_layout.addWidget(self.mode_badge)
+
+        self.kiosk_badge = QLabel("", self.header_bar)
+        self.kiosk_badge.setObjectName("StatusBadge")
+        header_layout.addWidget(self.kiosk_badge)
+
+        self.btn_mode_toggle = QPushButton("", self.header_bar)
+        self.btn_mode_toggle.setProperty("accent", True)
+        self.btn_mode_toggle.clicked.connect(self.on_toggle_mode)
+        header_layout.addWidget(self.btn_mode_toggle)
+        self.btn_mode_toggle.setVisible(self.cfg.ui.split_enabled)
+
+        self.btn_header_settings = QPushButton("", self.header_bar)
+        self.btn_header_settings.clicked.connect(self.open_settings)
+        header_layout.addWidget(self.btn_header_settings)
+
+        self.btn_kiosk = QPushButton("", self.header_bar)
+        self.btn_kiosk.setProperty("accent", True)
+        self.btn_kiosk.clicked.connect(self.toggle_kiosk)
+        header_layout.addWidget(self.btn_kiosk)
+
+        layout.addWidget(self.header_bar)
+
+        self.content_card = QFrame(container)
+        self.content_card.setObjectName("ContentCard")
+        card_layout = QVBoxLayout(self.content_card)
+        card_layout.setContentsMargins(18, 18, 18, 18)
+        card_layout.setSpacing(12)
+        card_layout.addWidget(self.mode_stack, 1)
+
+        layout.addWidget(self.content_card, 1)
+        return container
+
+    def _update_header_info(self) -> None:
+        if not self.header_title or not self.header_subtitle:
+            return
+
+        if not self.sources:
+            self.header_title.setText(tr("Welcome"))
+            self.header_subtitle.setText(tr("Add sources in the setup dialog to get started."))
+        else:
+            active = self.state.active_index
+            if not (0 <= active < len(self.sources)):
+                active = 0
+            self.header_title.setText(self.sources[active].name)
+            if self.state.mode == ViewMode.SINGLE:
+                self.header_subtitle.setText(tr("Focused view · showing one source at a time"))
+            else:
+                total_pages = max(1, (self.num_sources + self.page_size - 1) // self.page_size)
+                self.header_subtitle.setText(
+                    tr(
+                        "Wall view · Page {current}/{total}",
+                        current=self.current_page + 1,
+                        total=total_pages,
+                    )
+                )
+
+        if self.mode_badge:
+            if self.state.mode == ViewMode.SINGLE:
+                self.mode_badge.setText(tr("Focus"))
+                self.mode_badge.setProperty("mode", "single")
+            else:
+                self.mode_badge.setText(tr("Wall"))
+                self.mode_badge.setProperty("mode", "wall")
+            self.mode_badge.style().unpolish(self.mode_badge)
+            self.mode_badge.style().polish(self.mode_badge)
+
+        if self.btn_mode_toggle:
+            if not self.cfg.ui.split_enabled:
+                self.btn_mode_toggle.hide()
+            else:
+                self.btn_mode_toggle.show()
+                if self.state.mode == ViewMode.SINGLE:
+                    self.btn_mode_toggle.setText(tr("Switch to wall view"))
+                else:
+                    self.btn_mode_toggle.setText(tr("Switch to focus view"))
+
+        if self.kiosk_badge:
+            if self.isFullScreen():
+                self.kiosk_badge.setText(tr("Kiosk"))
+                self.kiosk_badge.setProperty("status", "kiosk")
+            else:
+                self.kiosk_badge.setText(tr("Windowed"))
+                self.kiosk_badge.setProperty("status", "window")
+            self.kiosk_badge.style().unpolish(self.kiosk_badge)
+            self.kiosk_badge.style().polish(self.kiosk_badge)
+
+        if self.btn_kiosk:
+            if self.isFullScreen():
+                self.btn_kiosk.setText(tr("Leave kiosk mode"))
+            else:
+                self.btn_kiosk.setText(tr("Enter kiosk mode"))
+
+        if self.btn_header_settings:
+            self.btn_header_settings.setText(tr("Settings"))
 
     def resizeEvent(self, ev):
         super().resizeEvent(ev)
@@ -197,7 +356,7 @@ class MainWindow(QMainWindow):
         act_show = m.addAction(tr("Show bar"))
         act_show.triggered.connect(lambda: self.set_sidebar_collapsed(False))
         if self.cfg.ui.split_enabled:
-            act_switch = m.addAction(tr("Switch"))
+            act_switch = m.addAction(tr("Switch layout"))
             act_switch.triggered.connect(self.on_toggle_mode)
         act_settings = m.addAction(tr("Settings"))
         act_settings.triggered.connect(self.open_settings)
@@ -205,7 +364,7 @@ class MainWindow(QMainWindow):
         m.exec(pos)
 
     def _nudge_local_apps(self):
-    # nur sichtbare Widgets der aktuellen Ansicht anstossen
+        # nur sichtbare Widgets der aktuellen Ansicht anstossen
         visible_widgets = []
         if self.state.mode == ViewMode.SINGLE:
             idx = self.state.active_index
@@ -437,10 +596,10 @@ class MainWindow(QMainWindow):
             self.grid_layout.setColumnStretch(c, 0)
 
         if n == 0:
-            ph = QLabel("leer", self.grid)
+            ph = QLabel(tr("No sources configured yet"), self.grid)
+            ph.setObjectName("EmptySlot")
             ph.setAlignment(Qt.AlignCenter)
-            ph.setStyleSheet("background:#202020; color:#808080; border:1px solid #2a2a2a;")
-            self.grid_layout.addWidget(ph, 0, 0, 1, 2)
+            self.grid_layout.addWidget(ph, 0, 0, 2, 2)
             self.grid_layout.setRowStretch(0, 1)
             self.grid_layout.setColumnStretch(0, 1)
             self.grid_layout.setColumnStretch(1, 1)
@@ -584,30 +743,29 @@ class MainWindow(QMainWindow):
         _add("toggle_kiosk", mapping.get("toggle_kiosk"), self.toggle_kiosk)
 
     def retranslate_ui(self):
-        self.overlay_burger.setToolTip(tr("Menu"))
+        self.overlay_burger.setToolTip(tr("Open navigation"))
+        if self.btn_header_settings:
+            self.btn_header_settings.setToolTip(tr("Open settings"))
+        if self.btn_kiosk:
+            self.btn_kiosk.setToolTip(tr("Toggle kiosk mode"))
+        if self.btn_mode_toggle:
+            self.btn_mode_toggle.setToolTip(tr("Toggle between wall and focus layouts"))
         if getattr(self, "sidebar", None):
             try:
                 self.sidebar.retranslate_ui()
             except Exception:
                 pass
+        self._update_header_info()
 
-    def apply_theme(self, theme: str):
-        if theme == "light":
-            self.setStyleSheet("""
-                QWidget { background: #f4f4f4; color: #202020; }
-                QToolButton, QPushButton { background: #ffffff; border: 1px solid #d0d0d0; padding: 6px; }
-                QLineEdit { background: #ffffff; border: 1px solid #d0d0d0; padding: 4px; }
-                QCheckBox::indicator { width: 16px; height: 16px; border: 1px solid #999; background: #fff; }
-                QCheckBox::indicator:checked { background: #0078d4; image: none; }
-            """)
-        else:
-            self.setStyleSheet("""
-                QWidget { background: #121212; color: #e0e0e0; }
-                QToolButton, QPushButton { background: #1f1f1f; border: 1px solid #2a2a2a; padding: 6px; }
-                QLineEdit { background: #1b1b1b; border: 1px solid #2a2a2a; padding: 4px; }
-                QCheckBox::indicator { width: 16px; height: 16px; border: 1px solid #5a5a5a; background: #2a2a2a; }
-                QCheckBox::indicator:checked { background: #3b82f6; image: none; border: 1px solid #3b82f6; }
-            """)
+    def apply_theme(self, theme: str) -> None:
+        self._palette = get_palette(theme)
+        self.setStyleSheet(build_application_stylesheet(self._palette))
+        if getattr(self, "sidebar", None):
+            try:
+                self.sidebar.apply_palette(self._palette)
+            except Exception:
+                pass
+        self._update_header_info()
 
     # ---------- Paging Helfer ----------
     def _page_delta(self, delta: int):
@@ -636,6 +794,7 @@ class MainWindow(QMainWindow):
             self._attach_quad_page(page)
             # Nach Seitenwechsel hart nachskalieren
             self._nudge_local_apps()
+        self._update_header_info()
 
     @Slot()
     def on_toggle_mode(self):
@@ -654,6 +813,7 @@ class MainWindow(QMainWindow):
         if self.sidebar and self.sidebar.isVisible():
             self.sidebar.set_active_global_index(self.state.active_index)
         self._nudge_local_apps()
+        self._update_header_info()
 
     @Slot(int)
     def on_select_view(self, idx: int):
@@ -668,6 +828,7 @@ class MainWindow(QMainWindow):
                 w.force_fit()
         if self.sidebar and self.sidebar.isVisible():
             self.sidebar.set_active_global_index(idx)
+        self._update_header_info()
 
     # ---------- Window mgmt ----------
     def show_on_monitor(self, monitor_index: int):
@@ -819,9 +980,11 @@ class MainWindow(QMainWindow):
 
     def enter_kiosk(self):
         self.showFullScreen()
+        self._update_header_info()
 
     def leave_kiosk(self):
         self.showNormal()
+        self._update_header_info()
 
     def toggle_kiosk(self):
         if self.isFullScreen():
