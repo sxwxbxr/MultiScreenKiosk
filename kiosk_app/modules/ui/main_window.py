@@ -41,6 +41,7 @@ def _attach(widget: QWidget, host_layout):
 
 class MainWindow(QMainWindow):
     request_quit = Signal()
+    initial_load_finished = Signal()
 
     def __init__(self, cfg: Config, state: AppState, config_path: Path | None = None, parent=None):
         super().__init__(parent)
@@ -70,6 +71,12 @@ class MainWindow(QMainWindow):
         self.source_widgets: List[QWidget] = []
         self.browser_services: List[BrowserService | None] = []
         self._create_source_widgets()
+
+        # Initiales Lade-Tracking
+        self._initial_loading_flags: List[bool] = []
+        self._initial_loading_timer: Optional[QTimer] = None
+        self._initial_loading_complete = False
+        self._setup_initial_loading_tracker()
 
         # Container
         self.single_host = QWidget(self)
@@ -284,6 +291,15 @@ class MainWindow(QMainWindow):
                     w.setParent(None)
         self.source_widgets = []
         self.browser_services = []
+        if getattr(self, "_initial_loading_timer", None):
+            try:
+                self._initial_loading_timer.stop()
+                self._initial_loading_timer.deleteLater()
+            except Exception:
+                pass
+            self._initial_loading_timer = None
+        self._initial_loading_flags = []
+        self._initial_loading_complete = False
 
     def _apply_config_object(self, cfg: Config):
         self.cfg = cfg
@@ -300,6 +316,7 @@ class MainWindow(QMainWindow):
         self.state.start_mode = start_mode
 
         self._create_source_widgets()
+        self._setup_initial_loading_tracker()
         self._build_root_and_sidebar()
         self.apply_theme(cfg.ui.theme)
         try:
@@ -666,6 +683,73 @@ class MainWindow(QMainWindow):
         for w in self.source_widgets:
             if isinstance(w, LocalAppWidget):
                 w.start()
+
+    def _setup_initial_loading_tracker(self):
+        if getattr(self, "_initial_loading_timer", None):
+            try:
+                self._initial_loading_timer.stop()
+                self._initial_loading_timer.deleteLater()
+            except Exception:
+                pass
+            self._initial_loading_timer = None
+
+        total = len(self.source_widgets)
+        self._initial_loading_flags = [False] * total
+        self._initial_loading_complete = False
+
+        if total == 0:
+            QTimer.singleShot(0, self._emit_initial_loading_complete)
+            return
+
+        self._initial_loading_timer = QTimer(self)
+        self._initial_loading_timer.setSingleShot(True)
+        self._initial_loading_timer.setInterval(45000)
+        self._initial_loading_timer.timeout.connect(self._on_initial_loading_timeout)
+
+        for idx, widget in enumerate(self.source_widgets):
+            if isinstance(widget, LocalAppWidget):
+                widget.ready.connect(lambda i=idx: self._mark_source_ready(i))
+            else:
+                svc = self.browser_services[idx] if idx < len(self.browser_services) else None
+                if svc is not None:
+                    svc.page_ready.connect(lambda i=idx: self._mark_source_ready(i))
+                else:
+                    self._mark_source_ready(idx)
+
+        self._initial_loading_timer.start()
+
+    def _mark_source_ready(self, idx: int):
+        if not (0 <= idx < len(self._initial_loading_flags)):
+            return
+        if self._initial_loading_flags[idx]:
+            return
+        self._initial_loading_flags[idx] = True
+        if all(self._initial_loading_flags):
+            self._emit_initial_loading_complete()
+
+    def _emit_initial_loading_complete(self):
+        if self._initial_loading_complete:
+            return
+        self._initial_loading_complete = True
+        if getattr(self, "_initial_loading_timer", None):
+            try:
+                self._initial_loading_timer.stop()
+                self._initial_loading_timer.deleteLater()
+            except Exception:
+                pass
+            self._initial_loading_timer = None
+        self.log.info("all sources reported ready", extra={"source": "ui"})
+        self.initial_load_finished.emit()
+
+    def _on_initial_loading_timeout(self):
+        pending = [idx for idx, ready in enumerate(self._initial_loading_flags) if not ready]
+        if pending:
+            self.log.warning(
+                "timeout while waiting for sources to embed; pending indices=%s",
+                pending,
+                extra={"source": "ui"},
+            )
+        self._emit_initial_loading_complete()
 
     def _maybe_start_auto_update(self) -> None:
         settings = getattr(self.cfg, "updates", None)

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from threading import Thread, Event
 from typing import Optional, Set, Dict, List
 
-from PySide6.QtCore import Qt, QTimer, QSize
+from PySide6.QtCore import Qt, QTimer, QSize, Signal
 from PySide6.QtGui import QWindow
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
 
@@ -255,6 +255,8 @@ class LocalAppWidget(QWidget):
     Startet eine lokale App, sucht sichtbare Fenster der PID und bettet ein geeignetes Fenster ein.
     Sicherung: ohne explizite Freigabe wird nie ein fremdes Programm eingefangen.
     """
+
+    ready = Signal()
 
     def __init__(self, spec: LocalAppSpec, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -617,6 +619,7 @@ class LocalAppWidget(QWidget):
             container = None
 
         def attach_ui():
+            success = False
             try:
                 self._fix_styles_for_child(int(target))
             except Exception:
@@ -631,17 +634,20 @@ class LocalAppWidget(QWidget):
                 self._placeholder.setVisible(False)
                 self._root.addWidget(self._container, 1)
                 self._apply_resize(force=True)
+                success = True
             else:
-                self._native_reparent(int(target))
+                success = self._native_reparent(int(target))
             try:
                 ShowWindow(HWND(self._embedded_hwnd), SW_SHOWNOACTIVATE)
             except Exception:
                 pass
             self.log.info("Fenster eingebettet", extra={"source": "local"})
+            if success:
+                self.ready.emit()
 
         QTimer.singleShot(0, attach_ui)
 
-    def _native_reparent(self, hwnd: int):
+    def _native_reparent(self, hwnd: int) -> bool:
         try:
             self._fix_styles_for_child(hwnd)
             parent_hwnd = int(self.winId())
@@ -652,8 +658,10 @@ class LocalAppWidget(QWidget):
             self._placeholder.setVisible(False)
             self._apply_resize(force=True)
             self.log.info("Fenster via SetParent eingebettet", extra={"source": "local"})
+            return True
         except Exception as ex:
             self.log.error(f"native Reparenting fehlgeschlagen: {ex}", extra={"source": "local"})
+        return False
 
     def _fix_styles_for_child(self, hwnd: int):
         style = int(GetWindowLongPtrW(HWND(hwnd), GWL_STYLE))

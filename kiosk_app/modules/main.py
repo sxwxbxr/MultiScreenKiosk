@@ -14,8 +14,9 @@ from modules.utils.logger import init_logging, get_logger
 from modules.ui.app_state import AppState
 from modules.ui.main_window import MainWindow
 from modules.ui.setup_dialog import SetupDialog
+from modules.ui.splash_screen import SplashScreen
 from modules.utils.config_loader import Config
-from modules.utils.i18n import i18n
+from modules.utils.i18n import i18n, tr
 
 
 def default_cfg_path() -> Path:
@@ -129,24 +130,89 @@ def main() -> int:
     except Exception:
         pass
 
+    # Splash Screen
+    splash = None
+    assets_dir = Path(__file__).resolve().parent / "assets"
+    splash_json = assets_dir / "tZuFzJlE5P.json"
+    splash_gif = assets_dir / "tZuFzJlE5P.gif"
+    try:
+        splash = SplashScreen(
+            json_path=splash_json,
+            gif_path=splash_gif,
+            message=tr("Preparing your displays…"),
+        )
+        splash.show()
+        app.processEvents()
+    except Exception as ex:
+        log.warning("could not display splash screen: %s", ex, extra={"source": "main"})
+        splash = None
+
     # App State
     state = AppState()
 
     # Hauptfenster erstellen
-    win = MainWindow(cfg, state, config_path=cfg_path)
     try:
-        # Gewuenschten Monitor setzen
+        win = MainWindow(cfg, state, config_path=cfg_path)
+    except Exception:
+        if splash:
+            splash.finish(None)
+        raise
+
+    try:
         if cfg.kiosk:
             win.show_on_monitor(getattr(cfg.kiosk, "monitor_index", 0))
-        # Kiosk Vollbild
-        if cfg.kiosk and getattr(cfg.kiosk, "kiosk_fullscreen", False):
-            win.enter_kiosk()
     except Exception:
         pass
 
-    win.show()
-    log.info("ui shown", extra={"source": "main"})
-    return app.exec()
+    should_enter_kiosk = bool(cfg.kiosk and getattr(cfg.kiosk, "kiosk_fullscreen", False))
+
+    def _present_main_window():
+        if getattr(_present_main_window, "_done", False):
+            return
+        _present_main_window._done = True  # type: ignore[attr-defined]
+
+        try:
+            if win.isMinimized() or not win.isVisible():
+                win.showNormal()
+        except Exception:
+            pass
+
+        if should_enter_kiosk:
+            try:
+                win.enter_kiosk()
+            except Exception:
+                pass
+        else:
+            try:
+                win.show()
+            except Exception:
+                pass
+
+        if splash:
+            splash.finish(win)
+        else:
+            try:
+                win.raise_()
+                win.activateWindow()
+            except Exception:
+                pass
+
+        log.info("ui shown", extra={"source": "main"})
+
+    _present_main_window._done = False  # type: ignore[attr-defined]
+    win.initial_load_finished.connect(_present_main_window)
+    if getattr(win, "_initial_loading_complete", False):  # pragma: no cover - defensive
+        _present_main_window()
+
+    try:
+        win.showMinimized()
+    except Exception:
+        win.show()
+
+    result = app.exec()
+    if splash:
+        splash.finish(win)
+    return result
 
 
 if __name__ == "__main__":
