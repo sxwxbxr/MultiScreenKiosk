@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sys
+import ctypes
 import argparse
 import json
 import shutil
@@ -78,6 +79,131 @@ def _dict_to_config(d: Dict[str, Any]) -> Config:
         ui=_parse_ui(d),
         kiosk=_parse_kiosk(d),
     )
+
+
+
+def _win32_force_foreground(hwnd: int) -> None:
+    """Best-effort foreground enforcement on Windows."""
+
+    if not sys.platform.startswith("win"):
+        return
+
+    if hwnd <= 0:
+        return
+
+    try:
+        user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    except Exception:
+        return
+
+    attach_thread_input = getattr(user32, "AttachThreadInput", None)
+    get_window_thread_process_id = getattr(user32, "GetWindowThreadProcessId", None)
+    get_current_thread_id = getattr(kernel32, "GetCurrentThreadId", None)
+    set_foreground_window = getattr(user32, "SetForegroundWindow", None)
+    set_active_window = getattr(user32, "SetActiveWindow", None)
+    bring_window_to_top = getattr(user32, "BringWindowToTop", None)
+    show_window = getattr(user32, "ShowWindow", None)
+    set_focus = getattr(user32, "SetFocus", None)
+    set_window_pos = getattr(user32, "SetWindowPos", None)
+    allow_set_foreground_window = getattr(user32, "AllowSetForegroundWindow", None)
+    get_foreground_window = getattr(user32, "GetForegroundWindow", None)
+
+    SW_RESTORE = 9
+    SWP_NOSIZE = 0x0001
+    SWP_NOMOVE = 0x0002
+    SWP_SHOWWINDOW = 0x0040
+    HWND_TOPMOST = ctypes.c_void_p(-1).value
+    HWND_NOTOPMOST = ctypes.c_void_p(-2).value
+
+    attached = False
+    fore_thread = 0
+    current_thread = 0
+
+    try:
+        if allow_set_foreground_window:
+            try:
+                allow_set_foreground_window(0xFFFFFFFF)
+            except Exception:
+                pass
+
+        fore_hwnd = 0
+        if get_foreground_window:
+            try:
+                fore_hwnd = get_foreground_window()
+            except Exception:
+                fore_hwnd = 0
+
+        if (
+            attach_thread_input
+            and get_window_thread_process_id
+            and get_current_thread_id
+            and fore_hwnd
+            and fore_hwnd != hwnd
+        ):
+            try:
+                proc_id = ctypes.c_ulong()
+                fore_thread = get_window_thread_process_id(fore_hwnd, ctypes.byref(proc_id))
+                current_thread = get_current_thread_id()
+                if fore_thread and current_thread and fore_thread != current_thread:
+                    attached = bool(attach_thread_input(fore_thread, current_thread, True))
+            except Exception:
+                attached = False
+
+        if set_window_pos:
+            try:
+                set_window_pos(
+                    hwnd,
+                    HWND_TOPMOST,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+                )
+                set_window_pos(
+                    hwnd,
+                    HWND_NOTOPMOST,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+                )
+            except Exception:
+                pass
+
+        if show_window:
+            try:
+                show_window(hwnd, SW_RESTORE)
+            except Exception:
+                pass
+        if bring_window_to_top:
+            try:
+                bring_window_to_top(hwnd)
+            except Exception:
+                pass
+        if set_active_window:
+            try:
+                set_active_window(hwnd)
+            except Exception:
+                pass
+        if set_focus:
+            try:
+                set_focus(hwnd)
+            except Exception:
+                pass
+        if set_foreground_window:
+            try:
+                set_foreground_window(hwnd)
+            except Exception:
+                pass
+    finally:
+        if attached and attach_thread_input and fore_thread and current_thread:
+            try:
+                attach_thread_input(fore_thread, current_thread, False)
+            except Exception:
+                pass
 
 
 
@@ -277,12 +403,19 @@ def main() -> int:
                 handle = win.windowHandle()
                 if handle is not None:
                     handle.requestActivate()
+
+                try:
+                    hwnd = int(win.winId())
+                except Exception:
+                    hwnd = 0
+                if hwnd:
+                    _win32_force_foreground(hwnd)
             except Exception:
                 pass
 
         _ensure_foreground()
-        QTimer.singleShot(150, _ensure_foreground)
-        QTimer.singleShot(400, _ensure_foreground)
+        for delay in (150, 400, 800, 1500):
+            QTimer.singleShot(delay, _ensure_foreground)
 
         log.info("ui shown", extra={"source": "main"})
 
