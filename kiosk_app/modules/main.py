@@ -8,7 +8,7 @@ import shutil
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QApplication, QDialog
 
 from modules.utils.config_loader import (
@@ -238,8 +238,10 @@ def main() -> int:
         _present_main_window._done = True  # type: ignore[attr-defined]
 
         try:
-            if win.isMinimized() or not win.isVisible():
+            if win.isMinimized():
                 win.showNormal()
+            elif not win.isVisible():
+                win.show()
         except Exception:
             pass
 
@@ -256,12 +258,31 @@ def main() -> int:
 
         if splash:
             splash.finish(win)
-        else:
+
+        def _ensure_foreground() -> None:
             try:
+                if win.isMinimized() and not win.isFullScreen():
+                    win.showNormal()
+                elif not win.isVisible():
+                    win.show()
+
+                current_state = win.windowState()
+                if current_state & Qt.WindowMinimized:
+                    win.setWindowState(current_state & ~Qt.WindowMinimized)
+
+                app.setActiveWindow(win)
                 win.raise_()
                 win.activateWindow()
+
+                handle = win.windowHandle()
+                if handle is not None:
+                    handle.requestActivate()
             except Exception:
                 pass
+
+        _ensure_foreground()
+        QTimer.singleShot(150, _ensure_foreground)
+        QTimer.singleShot(400, _ensure_foreground)
 
         log.info("ui shown", extra={"source": "main"})
 
