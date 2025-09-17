@@ -52,6 +52,20 @@ class SourceSpec:
 
 
 @dataclass
+class ScheduleBlock:
+    start: str
+    end: str
+    source: str
+
+
+@dataclass
+class PaneSchedule:
+    pane: int
+    blocks: List[ScheduleBlock] = field(default_factory=list)
+    default_source: Optional[str] = None
+
+
+@dataclass
 class UISettings:
     start_mode: str = "quad"                 # "single" oder "quad"
     split_enabled: bool = True               # Splitscreen erlauben
@@ -155,6 +169,7 @@ class LoggingSettings:
 @dataclass
 class Config:
     sources: List[SourceSpec] = field(default_factory=list)
+    schedules: List[PaneSchedule] = field(default_factory=list)
     ui: UISettings = field(default_factory=UISettings)
     kiosk: KioskSettings = field(default_factory=KioskSettings)
     logging: LoggingSettings = field(default_factory=LoggingSettings)
@@ -169,12 +184,15 @@ LoggingConfig = LoggingSettings
 __all__ = [
     "Config",
     "SourceSpec",
+    "ScheduleBlock",
+    "PaneSchedule",
     "UISettings",
     "KioskSettings",
     "LoggingSettings",
     "UpdateSettings",
     "RemoteLogExportSettings",
     "RemoteLogDestination",
+    "parse_schedule_definitions",
     "UIConfig",
     "KioskConfig",
     "LoggingConfig",
@@ -249,6 +267,108 @@ def _as_opt_int(value: Any) -> Optional[int]:
         return int(value)
     except Exception:
         return None
+
+
+def _parse_schedule_time(value: str) -> Optional[int]:
+    try:
+        parts = value.split(":", 1)
+        if len(parts) != 2:
+            return None
+        hour = int(parts[0])
+        minute = int(parts[1])
+        if not (0 <= hour < 24 and 0 <= minute < 60):
+            return None
+        return hour * 60 + minute
+    except Exception:
+        return None
+
+
+def _parse_schedule_block(raw: Any, *, strict: bool = False) -> Optional[ScheduleBlock]:
+    if not isinstance(raw, dict):
+        if strict:
+            raise ValueError("Schedule blocks must be objects with start/end/source fields.")
+        log.warning("ignoring schedule block because it is not an object: %r", raw)
+        return None
+
+    source = _safe_str(raw.get("source"))
+    if not source:
+        if strict:
+            raise ValueError("Schedule block must define a source.")
+        log.warning("ignoring schedule block without source: %r", raw)
+        return None
+
+    start = _safe_str(raw.get("start"))
+    end = _safe_str(raw.get("end"))
+    if not start or not end:
+        if strict:
+            raise ValueError("Schedule block must define start and end times.")
+        log.warning("ignoring schedule block without start/end: %r", raw)
+        return None
+
+    if _parse_schedule_time(start) is None or _parse_schedule_time(end) is None:
+        if strict:
+            raise ValueError("Schedule block times must use HH:MM format.")
+        log.warning("ignoring schedule block with invalid time values: %r", raw)
+        return None
+
+    return ScheduleBlock(start=start, end=end, source=source)
+
+
+def parse_schedule_definitions(raw: Any, *, strict: bool = False) -> List[PaneSchedule]:
+    items: Any
+    if isinstance(raw, dict):
+        items = raw.get("schedules")
+    else:
+        items = raw
+
+    if items is None:
+        return []
+
+    if not isinstance(items, list):
+        if strict:
+            raise ValueError("Schedule definition must be a list of entries.")
+        log.warning("invalid schedule definition: expected list, got %r", type(items).__name__)
+        return []
+
+    schedules: List[PaneSchedule] = []
+    for entry in items:
+        if not isinstance(entry, dict):
+            if strict:
+                raise ValueError("Schedule entries must be objects.")
+            log.warning("skipping schedule entry because it is not an object: %r", entry)
+            continue
+
+        pane = _as_int(entry, "pane", -1)
+        if pane < 0:
+            msg = f"invalid pane index in schedule entry: {pane}"
+            if strict:
+                raise ValueError("Pane index must be zero or greater.")
+            log.warning("%s", msg)
+            continue
+
+        default_source = _safe_str(entry.get("default_source")) or None
+        blocks_raw = entry.get("blocks")
+        blocks: List[ScheduleBlock] = []
+        if isinstance(blocks_raw, list):
+            for raw_block in blocks_raw:
+                block = _parse_schedule_block(raw_block, strict=strict)
+                if block is not None:
+                    blocks.append(block)
+        elif blocks_raw is not None:
+            if strict:
+                raise ValueError("Schedule blocks must be provided as a list.")
+            log.warning("ignoring schedule entry with non-list blocks: %r", entry)
+
+        if not blocks and default_source is None:
+            if strict:
+                raise ValueError("Schedule entry requires at least one block or a default source.")
+            log.warning("ignoring schedule entry without blocks/default: %r", entry)
+            continue
+
+        schedules.append(PaneSchedule(pane=pane, blocks=blocks, default_source=default_source))
+
+    schedules.sort(key=lambda item: item.pane)
+    return schedules
 
 # =========================
 # Parser
@@ -543,6 +663,7 @@ def _defaults_config() -> Config:
                 child_window_class_pattern="Edit",
             ),
         ],
+        schedules=[],
         ui=UISettings(),
         kiosk=KioskSettings(),
         logging=LoggingSettings(),
@@ -567,6 +688,7 @@ def load_config(path: Path) -> Config:
 
         cfg = Config(
             sources=_parse_sources(raw),
+            schedules=parse_schedule_definitions(raw),
             ui=_parse_ui(raw),
             kiosk=_parse_kiosk(raw),
             logging=_parse_logging(raw),

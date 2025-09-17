@@ -132,3 +132,48 @@ def test_update_settings_parse(tmp_path: Path):
     assert updates.verify_tls is False
     assert updates.download_dir == str(tmp_path / "downloads")
     assert updates.auto_install is False
+
+
+def test_schedule_parsing(tmp_path: Path):
+    cfg_data = {
+        "sources": [
+            {"type": "browser", "name": "A", "url": "http://example.com"},
+            {"type": "browser", "name": "B", "url": "http://example.org"},
+            {"type": "browser", "name": "C", "url": "http://example.net"},
+        ],
+        "schedules": [
+            {
+                "pane": 0,
+                "default_source": "A",
+                "blocks": [
+                    {"start": "08:00", "end": "10:00", "source": "B"},
+                    {"start": "10:00", "end": "18:00", "source": "C"},
+                ],
+            },
+            {
+                "pane": 1,
+                "blocks": [
+                    {"start": "00:00", "end": "23:59", "source": "A"},
+                    {"start": "bad", "end": "value", "source": "ignored"},
+                ],
+            },
+            {"pane": -1, "blocks": [{"start": "00:00", "end": "01:00", "source": "B"}]},
+        ],
+    }
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(cfg_data))
+    cfg = load_config(path)
+
+    assert len(cfg.schedules) == 2
+    first = cfg.schedules[0]
+    assert first.pane == 0
+    assert first.default_source == "A"
+    assert [block.source for block in first.blocks] == ["B", "C"]
+    assert first.blocks[0].start == "08:00"
+    assert first.blocks[1].end == "18:00"
+
+    second = cfg.schedules[1]
+    assert second.pane == 1
+    assert second.default_source is None
+    assert len(second.blocks) == 1
+    assert second.blocks[0].source == "A"

@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 from typing import Optional, Dict, Any, List, Callable
 from copy import deepcopy
 from pathlib import Path
@@ -7,7 +8,7 @@ from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QComboBox, QCheckBox, QLineEdit, QFileDialog, QMessageBox,
-    QKeySequenceEdit, QMenu
+    QKeySequenceEdit, QMenu, QPlainTextEdit
 )
 
 # Log Viewer und Log Pfad
@@ -53,6 +54,7 @@ class SettingsDialog(QDialog):
                  split_enabled: bool,
                  shortcuts: Optional[Dict[str, str]] = None,
                  remote_export: Optional[RemoteLogExportSettings] = None,
+                 schedule_data: Optional[List[Dict[str, Any]]] = None,
                  backup_handler: Optional[Callable[[Path], None]] = None,
                  restore_handler: Optional[Callable[[Path], Any]] = None,
                  parent: Optional[QWidget] = None):
@@ -68,6 +70,7 @@ class SettingsDialog(QDialog):
         self._remote_export_settings = (
             deepcopy(remote_export) if remote_export is not None else RemoteLogExportSettings()
         )
+        self._initial_schedule_payload = schedule_data or []
 
         # ---------- Titlebar ----------
         bar = QWidget(self)
@@ -158,6 +161,20 @@ class SettingsDialog(QDialog):
         row5.addWidget(self.logo_edit, 1)
         row5.addWidget(self.btn_browse_logo)
 
+        # Schedule editor
+        self.lbl_schedule = QLabel("", self)
+        schedule_text = "[]"
+        if self._initial_schedule_payload:
+            try:
+                schedule_text = json.dumps(self._initial_schedule_payload, ensure_ascii=False, indent=2)
+            except Exception:
+                schedule_text = "[]"
+        self.schedule_edit = QPlainTextEdit(self)
+        self.schedule_edit.setPlainText(schedule_text)
+        self.schedule_edit.setTabChangesFocus(True)
+        self.schedule_edit.setMinimumHeight(120)
+        self.schedule_edit.setLineWrapMode(QPlainTextEdit.NoWrap)
+
         # Shortcuts
         self.lbl_shortcuts = QLabel("", self)
         sc_container = QVBoxLayout()
@@ -185,6 +202,8 @@ class SettingsDialog(QDialog):
         body_l.addLayout(row_lang)
         body_l.addLayout(row4)
         body_l.addLayout(row5)
+        body_l.addWidget(self.lbl_schedule)
+        body_l.addWidget(self.schedule_edit)
         body_l.addWidget(self.lbl_shortcuts)
         body_l.addLayout(sc_container)
         self.info_lbl = None
@@ -248,6 +267,12 @@ class SettingsDialog(QDialog):
 
     # ------- Actions -------
     def _accept_save(self):
+        try:
+            schedule_payload = self._read_schedule_payload()
+        except ValueError as ex:
+            QMessageBox.warning(self, tr("Invalid schedule"), str(ex))
+            return
+
         sc_map: Dict[str, str] = {}
         for key, edit in self.shortcut_edits.items():
             seq = edit.keySequence().toString(QKeySequence.NativeText).strip()
@@ -272,8 +297,23 @@ class SettingsDialog(QDialog):
             "shortcuts": merged,
             "remote_export": deepcopy(self._remote_export_settings),
             "quit_requested": False,
+            "schedule": schedule_payload,
         }
         self.accept()
+
+    def _read_schedule_payload(self) -> List[Dict[str, Any]]:
+        text = self.schedule_edit.toPlainText().strip()
+        if not text:
+            return []
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError as ex:
+            raise ValueError(tr("Schedule JSON is invalid: {error}", error=str(ex)))
+        if payload is None:
+            return []
+        if not isinstance(payload, list):
+            raise ValueError(tr("Schedule JSON must describe a list."))
+        return payload
 
     def _update_remote_button_caption(self):
         status = tr("enabled") if getattr(self._remote_export_settings, "enabled", False) else tr("disabled")
@@ -447,6 +487,11 @@ class SettingsDialog(QDialog):
         if self._result:
             return self._result
 
+        try:
+            schedule_payload = self._read_schedule_payload()
+        except ValueError:
+            schedule_payload = self._initial_schedule_payload[:]
+
         sc_map: Dict[str, str] = {}
         for key, edit in self.shortcut_edits.items():
             seq = edit.keySequence().toString(QKeySequence.NativeText).strip()
@@ -466,6 +511,7 @@ class SettingsDialog(QDialog):
             "shortcuts": merged,
             "remote_export": deepcopy(self._remote_export_settings),
             "quit_requested": False,
+            "schedule": schedule_payload,
         }
 
     def _browse_gif(self):
@@ -538,6 +584,8 @@ class SettingsDialog(QDialog):
         self.lbl_logo.setText(tr("Logo path"))
         self.logo_edit.setPlaceholderText(tr("Path to logo"))
         self.btn_browse_logo.setText(tr("Browse"))
+        self.lbl_schedule.setText(tr("Content schedule (JSON)"))
+        self.schedule_edit.setPlaceholderText(tr("Provide a JSON array of pane schedules."))
         self.lbl_shortcuts.setText(tr("Shortcuts"))
         names = {
             "select_1": tr("View 1"),
