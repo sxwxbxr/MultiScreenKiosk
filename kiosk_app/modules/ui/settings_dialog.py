@@ -402,6 +402,157 @@ class ScheduleEditorWidget(QWidget):
             candidate += 1
         return candidate
 
+
+class ScheduleEditorDialog(QDialog):
+    def __init__(
+        self,
+        schedule_data: Optional[List[Dict[str, Any]]] = None,
+        source_names: Optional[List[str]] = None,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setModal(True)
+        self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
+        self._result: List[Dict[str, Any]] = deepcopy(schedule_data) if schedule_data is not None else []
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        self.editor = ScheduleEditorWidget(self._result, source_names, self)
+        self.editor.setMinimumHeight(260)
+        layout.addWidget(self.editor, 1)
+
+        button_row = QHBoxLayout()
+        button_row.addStretch(1)
+        self.btn_cancel = QPushButton("", self)
+        self.btn_ok = QPushButton("", self)
+        button_row.addWidget(self.btn_cancel)
+        button_row.addWidget(self.btn_ok)
+        layout.addLayout(button_row)
+
+        self.btn_cancel.clicked.connect(self.reject)
+        self.btn_ok.clicked.connect(self._accept)
+
+        i18n.language_changed.connect(self._apply_translations)
+        self._apply_translations()
+
+    def _accept(self) -> None:
+        try:
+            payload = self.editor.to_payload()
+        except ValueError as ex:
+            QMessageBox.warning(self, tr("Invalid schedule"), str(ex))
+            return
+        self._result = payload
+        self.accept()
+
+    def result_schedule(self) -> List[Dict[str, Any]]:
+        return deepcopy(self._result)
+
+    def _apply_translations(self) -> None:
+        self.setWindowTitle(tr("Content schedule"))
+        self.btn_cancel.setText(tr("Cancel"))
+        self.btn_ok.setText(tr("Save"))
+        self.editor.apply_translations()
+
+
+class ShortcutEditorDialog(QDialog):
+    def __init__(
+        self,
+        shortcuts: Optional[Dict[str, str]] = None,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setModal(True)
+        self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
+        self._result: Optional[Dict[str, str]] = None
+
+        base_map: Dict[str, str] = DEFAULT_SHORTCUTS.copy()
+        if shortcuts:
+            for key, seq in shortcuts.items():
+                if seq:
+                    base_map[key] = seq
+        self._initial_map = base_map
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        self._order = [
+            "select_1",
+            "select_2",
+            "select_3",
+            "select_4",
+            "next_page",
+            "prev_page",
+            "toggle_mode",
+            "toggle_kiosk",
+        ]
+        self._labels: Dict[str, QLabel] = {}
+        self._edits: Dict[str, QKeySequenceEdit] = {}
+
+        for key in self._order:
+            row = QHBoxLayout()
+            lbl = QLabel("", self)
+            row.addWidget(lbl)
+            edit = QKeySequenceEdit(self)
+            edit.setKeySequence(QKeySequence(base_map.get(key, DEFAULT_SHORTCUTS.get(key, ""))))
+            row.addWidget(edit, 1)
+            layout.addLayout(row)
+            self._labels[key] = lbl
+            self._edits[key] = edit
+
+        button_row = QHBoxLayout()
+        button_row.addStretch(1)
+        self.btn_cancel = QPushButton("", self)
+        self.btn_ok = QPushButton("", self)
+        button_row.addWidget(self.btn_cancel)
+        button_row.addWidget(self.btn_ok)
+        layout.addLayout(button_row)
+
+        self.btn_cancel.clicked.connect(self.reject)
+        self.btn_ok.clicked.connect(self._accept)
+
+        i18n.language_changed.connect(self._apply_translations)
+        self._apply_translations()
+
+    def _accept(self) -> None:
+        overrides: Dict[str, str] = {}
+        for key, edit in self._edits.items():
+            seq = edit.keySequence().toString(QKeySequence.NativeText).strip()
+            if seq:
+                overrides[key] = seq
+        sequences = list(overrides.values())
+        if len(sequences) != len(set(sequences)):
+            QMessageBox.warning(self, tr("Shortcut conflict"), tr("Shortcuts must be unique."))
+            return
+        result = DEFAULT_SHORTCUTS.copy()
+        result.update(overrides)
+        self._result = result
+        self.accept()
+
+    def result_shortcuts(self) -> Dict[str, str]:
+        if self._result is not None:
+            return deepcopy(self._result)
+        return deepcopy(self._initial_map)
+
+    def _apply_translations(self) -> None:
+        self.setWindowTitle(tr("Shortcut editor"))
+        names = {
+            "select_1": tr("View 1"),
+            "select_2": tr("View 2"),
+            "select_3": tr("View 3"),
+            "select_4": tr("View 4"),
+            "next_page": tr("Next page"),
+            "prev_page": tr("Previous page"),
+            "toggle_mode": tr("Toggle mode"),
+            "toggle_kiosk": tr("Toggle kiosk"),
+        }
+        for key, lbl in self._labels.items():
+            lbl.setText(names.get(key, key))
+        self.btn_cancel.setText(tr("Cancel"))
+        self.btn_ok.setText(tr("Save"))
+
 class SettingsDialog(QDialog):
     """
     Rahmungsloser Settings Dialog.
@@ -448,6 +599,22 @@ class SettingsDialog(QDialog):
         )
         self._initial_schedule_payload = deepcopy(schedule_data) if schedule_data is not None else []
         self._source_names: List[str] = list(source_names or [])
+        self._schedule_payload: List[Dict[str, Any]] = deepcopy(self._initial_schedule_payload)
+        self._shortcut_map: Dict[str, str] = DEFAULT_SHORTCUTS.copy()
+        if shortcuts:
+            for key, seq in shortcuts.items():
+                if seq:
+                    self._shortcut_map[key] = seq
+        self._shortcut_order = [
+            "select_1",
+            "select_2",
+            "select_3",
+            "select_4",
+            "next_page",
+            "prev_page",
+            "toggle_mode",
+            "toggle_kiosk",
+        ]
 
         # ---------- Titlebar ----------
         bar = QWidget(self)
@@ -538,35 +705,27 @@ class SettingsDialog(QDialog):
         row5.addWidget(self.logo_edit, 1)
         row5.addWidget(self.btn_browse_logo)
 
-        # Schedule editor
+        # Schedule editor launcher
+        schedule_row = QHBoxLayout()
         self.lbl_schedule = QLabel("", self)
-        self.schedule_editor = ScheduleEditorWidget(
-            schedule_data=self._initial_schedule_payload,
-            source_names=self._source_names,
-            parent=self,
-        )
-        self.schedule_editor.setMinimumHeight(200)
+        schedule_row.addWidget(self.lbl_schedule)
+        self.schedule_summary_lbl = QLabel("", self)
+        self.schedule_summary_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        schedule_row.addWidget(self.schedule_summary_lbl, 1)
+        self.btn_open_schedule = QPushButton("", self)
+        self.btn_open_schedule.clicked.connect(self._open_schedule_dialog)
+        schedule_row.addWidget(self.btn_open_schedule)
 
-        # Shortcuts
+        # Shortcut editor launcher
+        shortcuts_row = QHBoxLayout()
         self.lbl_shortcuts = QLabel("", self)
-        sc_container = QVBoxLayout()
-        self.shortcut_edits: Dict[str, QKeySequenceEdit] = {}
-        self.shortcut_labels: Dict[str, QLabel] = {}
-        sc_data = shortcuts or DEFAULT_SHORTCUTS
-        sc_order = [
-            "select_1", "select_2", "select_3", "select_4",
-            "next_page", "prev_page", "toggle_mode", "toggle_kiosk",
-        ]
-        for key in sc_order:
-            row_sc = QHBoxLayout()
-            lbl = QLabel("", self)
-            row_sc.addWidget(lbl)
-            edit = QKeySequenceEdit(self)
-            edit.setKeySequence(QKeySequence(sc_data.get(key, DEFAULT_SHORTCUTS.get(key, ""))))
-            row_sc.addWidget(edit, 1)
-            sc_container.addLayout(row_sc)
-            self.shortcut_edits[key] = edit
-            self.shortcut_labels[key] = lbl
+        shortcuts_row.addWidget(self.lbl_shortcuts)
+        self.shortcut_summary_lbl = QLabel("", self)
+        self.shortcut_summary_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        shortcuts_row.addWidget(self.shortcut_summary_lbl, 1)
+        self.btn_open_shortcuts = QPushButton("", self)
+        self.btn_open_shortcuts.clicked.connect(self._open_shortcut_dialog)
+        shortcuts_row.addWidget(self.btn_open_shortcuts)
 
         body_l.addLayout(row1)
         body_l.addLayout(row2)
@@ -574,10 +733,8 @@ class SettingsDialog(QDialog):
         body_l.addLayout(row_lang)
         body_l.addLayout(row4)
         body_l.addLayout(row5)
-        body_l.addWidget(self.lbl_schedule)
-        body_l.addWidget(self.schedule_editor)
-        body_l.addWidget(self.lbl_shortcuts)
-        body_l.addLayout(sc_container)
+        body_l.addLayout(schedule_row)
+        body_l.addLayout(shortcuts_row)
         self.info_lbl = None
         if not split_enabled:
             self.info_lbl = QLabel("", self)
@@ -639,24 +796,17 @@ class SettingsDialog(QDialog):
 
     # ------- Actions -------
     def _accept_save(self):
-        try:
-            schedule_payload = self.schedule_editor.to_payload()
-        except ValueError as ex:
-            QMessageBox.warning(self, tr("Invalid schedule"), str(ex))
-            return
+        schedule_payload = deepcopy(self._schedule_payload or [])
 
-        sc_map: Dict[str, str] = {}
-        for key, edit in self.shortcut_edits.items():
-            seq = edit.keySequence().toString(QKeySequence.NativeText).strip()
-            if seq:
-                sc_map[key] = seq
-        seqs = list(sc_map.values())
-        if len(seqs) != len(set(seqs)):
+        sequences = [seq for seq in self._shortcut_map.values() if seq]
+        if len(sequences) != len(set(sequences)):
             QMessageBox.warning(self, tr("Shortcut conflict"), tr("Shortcuts must be unique."))
             return
 
         merged = DEFAULT_SHORTCUTS.copy()
-        merged.update(sc_map)
+        for key, seq in self._shortcut_map.items():
+            if seq:
+                merged[key] = seq
 
         self._result = {
             "nav_orientation": self.nav_combo.currentData(),
@@ -678,6 +828,26 @@ class SettingsDialog(QDialog):
         count = len(getattr(self._remote_export_settings, "destinations", []) or [])
         self.btn_remote_export.setText(tr("Remote export ({status})", status=status))
         self.btn_remote_export.setToolTip(tr("{count} destinations configured", count=count))
+
+    def _update_schedule_summary(self) -> None:
+        count = len(self._schedule_payload or [])
+        if count == 0:
+            summary = tr("No schedule configured")
+        else:
+            summary = tr("Panes scheduled: {count}", count=count)
+        self.schedule_summary_lbl.setText(summary)
+
+    def _update_shortcut_summary(self) -> None:
+        custom = 0
+        for key in self._shortcut_order:
+            seq = self._shortcut_map.get(key)
+            if seq and seq != DEFAULT_SHORTCUTS.get(key):
+                custom += 1
+        if custom == 0:
+            summary = tr("Using default shortcuts")
+        else:
+            summary = tr("Custom shortcuts: {count}", count=custom)
+        self.shortcut_summary_lbl.setText(summary)
 
     def _refresh_config_actions(self):
         have_backup = bool(self._backup_handler)
@@ -709,6 +879,18 @@ class SettingsDialog(QDialog):
             if result is not None:
                 self._remote_export_settings = deepcopy(result)
                 self._update_remote_button_caption()
+
+    def _open_schedule_dialog(self) -> None:
+        dlg = ScheduleEditorDialog(self._schedule_payload, self._source_names, self)
+        if dlg.exec():
+            self._schedule_payload = dlg.result_schedule()
+            self._update_schedule_summary()
+
+    def _open_shortcut_dialog(self) -> None:
+        dlg = ShortcutEditorDialog(self._shortcut_map, self)
+        if dlg.exec():
+            self._shortcut_map = dlg.result_shortcuts()
+            self._update_shortcut_summary()
 
     def _open_logs_window(self):
         dlg = LogViewer(self)
@@ -845,18 +1027,12 @@ class SettingsDialog(QDialog):
         if self._result:
             return self._result
 
-        try:
-            schedule_payload = self.schedule_editor.to_payload()
-        except ValueError:
-            schedule_payload = deepcopy(self._initial_schedule_payload)
+        schedule_payload = deepcopy(self._schedule_payload or [])
 
-        sc_map: Dict[str, str] = {}
-        for key, edit in self.shortcut_edits.items():
-            seq = edit.keySequence().toString(QKeySequence.NativeText).strip()
-            if seq:
-                sc_map[key] = seq
         merged = DEFAULT_SHORTCUTS.copy()
-        merged.update(sc_map)
+        for key, seq in self._shortcut_map.items():
+            if seq:
+                merged[key] = seq
 
         return {
             "nav_orientation": self.nav_combo.currentData(),
@@ -943,20 +1119,11 @@ class SettingsDialog(QDialog):
         self.logo_edit.setPlaceholderText(tr("Path to logo"))
         self.btn_browse_logo.setText(tr("Browse"))
         self.lbl_schedule.setText(tr("Content schedule"))
-        self.schedule_editor.apply_translations()
+        self.btn_open_schedule.setText(tr("Open schedule editor"))
+        self._update_schedule_summary()
         self.lbl_shortcuts.setText(tr("Shortcuts"))
-        names = {
-            "select_1": tr("View 1"),
-            "select_2": tr("View 2"),
-            "select_3": tr("View 3"),
-            "select_4": tr("View 4"),
-            "next_page": tr("Next page"),
-            "prev_page": tr("Previous page"),
-            "toggle_mode": tr("Toggle mode"),
-            "toggle_kiosk": tr("Toggle kiosk"),
-        }
-        for key, lbl in self.shortcut_labels.items():
-            lbl.setText(names.get(key, key))
+        self.btn_open_shortcuts.setText(tr("Configure shortcuts"))
+        self._update_shortcut_summary()
         if self.info_lbl is not None:
             self.info_lbl.setText(tr("Note: Split screen is disabled. Switch via the sidebar, Ctrl+Q is inactive."))
         config_label = tr("Configuration")
