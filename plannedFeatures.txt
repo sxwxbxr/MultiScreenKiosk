@@ -1,0 +1,13 @@
+Planned Features (target: Version 2.0)
+
+1. Real-Time Analytics Dashboard
+   - Objective: provide operators with live metrics about kiosk usage, source performance, and system health.
+   - Notes: integrate a lightweight telemetry collector and surface charts within the admin settings area.
+
+2. Multi-Device Sync
+   - Objective: allow multiple kiosks to share schedules and configuration changes through a central service.
+   - Notes: introduce optional cloud synchronization with conflict resolution and admin notifications.
+
+3. Offline Fallback Enhancements
+   - Objective: ensure kiosks remain functional without network connectivity by caching assets and schedules.
+   - Notes: add asset prefetching, graceful degradation messaging, and automatic resync once connectivity returns.

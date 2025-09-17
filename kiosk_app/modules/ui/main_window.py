@@ -3,8 +3,9 @@ from __future__ import annotations
 import copy
 import json
 import sys
+from dataclasses import asdict
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from PySide6.QtCore import Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QShortcut, QKeySequence
@@ -21,9 +22,17 @@ from modules.ui.window_spy import WindowSpyDialog
 from modules.services.auto_update import AutoUpdateService, UpdateResult
 from modules.services.browser_services import BrowserService, make_webview
 from modules.services.local_app_service import LocalAppWidget
-from modules.utils.config_loader import Config, SourceSpec, save_config, load_config, DEFAULT_SHORTCUTS
+from modules.utils.config_loader import (
+    Config,
+    SourceSpec,
+    save_config,
+    load_config,
+    DEFAULT_SHORTCUTS,
+    parse_schedule_definitions,
+)
 from modules.utils.logger import get_logger, init_logging
 from modules.utils.i18n import tr, i18n
+from modules.utils.content_schedule import ContentScheduler, compute_slot_assignments
 from modules.version import __version__
 
 
@@ -62,6 +71,10 @@ class MainWindow(QMainWindow):
         # Quellen
         self.sources: List[SourceSpec] = cfg.sources[:] if cfg.sources else []
         self.num_sources = len(self.sources)
+        self._display_indices: List[int] = list(range(self.num_sources))
+        self._source_index_by_name: Dict[str, int] = {s.name: idx for idx, s in enumerate(self.sources)}
+        self._scheduler: Optional[ContentScheduler] = None
+        self._schedule_timer: Optional[QTimer] = None
         self.current_page = 0
         self.page_size = 4
         if not self.cfg.ui.split_enabled:
@@ -102,6 +115,7 @@ class MainWindow(QMainWindow):
 
         # Root und Sidebar
         self._build_root_and_sidebar()
+        self._setup_scheduler()
 
         # Theme
         self.apply_theme(self.cfg.ui.theme)
@@ -209,15 +223,18 @@ class MainWindow(QMainWindow):
         visible_widgets = []
         if self.state.mode == ViewMode.SINGLE:
             idx = self.state.active_index
-            if 0 <= idx < len(self.source_widgets):
-                visible_widgets.append(self.source_widgets[idx])
+            actual = self._resolve_display_index(idx)
+            if 0 <= actual < len(self.source_widgets):
+                visible_widgets.append(self.source_widgets[actual])
         else:
             # Quad Seite
             start = self.current_page * self.page_size
             for i in range(4):
-                j = start + i
-                if 0 <= j < len(self.source_widgets):
-                    visible_widgets.append(self.source_widgets[j])
+                slot = start + i
+                if 0 <= slot < self.num_sources:
+                    actual = self._resolve_display_index(slot)
+                    if 0 <= actual < len(self.source_widgets):
+                        visible_widgets.append(self.source_widgets[actual])
 
         for w in visible_widgets:
             if isinstance(w, LocalAppWidget):
@@ -300,11 +317,113 @@ class MainWindow(QMainWindow):
             self._initial_loading_timer = None
         self._initial_loading_flags = []
         self._initial_loading_complete = False
+        if getattr(self, "_schedule_timer", None):
+            try:
+                self._schedule_timer.stop()
+                self._schedule_timer.deleteLater()
+            except Exception:
+                pass
+            self._schedule_timer = None
+        self._scheduler = None
+        self._display_indices = []
+        self._source_index_by_name = {}
+
+    def _resolve_display_index(self, slot: int) -> int:
+        if 0 <= slot < len(self._display_indices):
+            idx = self._display_indices[slot]
+            if 0 <= idx < len(self.source_widgets):
+                return idx
+        return max(0, min(slot, len(self.source_widgets) - 1)) if self.source_widgets else 0
+
+    def _effective_titles(self) -> List[str]:
+        titles: List[str] = []
+        for slot in range(self.num_sources):
+            idx = self._resolve_display_index(slot)
+            if 0 <= idx < len(self.sources):
+                titles.append(self.sources[idx].name)
+        return titles
+
+    def _update_sidebar_titles(self) -> None:
+        if getattr(self, "sidebar", None):
+            try:
+                self.sidebar.set_titles(self._effective_titles())
+                self.sidebar.set_active_global_index(self.state.active_index)
+            except Exception:
+                pass
+
+    def _apply_display_mapping(self) -> None:
+        if self.state.mode == ViewMode.SINGLE:
+            self._attach_single(self.state.active_index)
+        else:
+            self._attach_quad_page(self.current_page)
+        self._update_sidebar_titles()
+        self._nudge_local_apps()
+
+    def _setup_scheduler(self) -> None:
+        if getattr(self, "_schedule_timer", None):
+            try:
+                self._schedule_timer.stop()
+                self._schedule_timer.deleteLater()
+            except Exception:
+                pass
+            self._schedule_timer = None
+
+        schedules = getattr(self.cfg, "schedules", []) or []
+        self._source_index_by_name = {s.name: idx for idx, s in enumerate(self.sources)}
+
+        scheduler = ContentScheduler(schedules)
+        if scheduler.has_rules:
+            self._scheduler = scheduler
+            self._schedule_timer = QTimer(self)
+            self._schedule_timer.setInterval(30000)
+            self._schedule_timer.timeout.connect(self._evaluate_schedule)
+            self._schedule_timer.start()
+        else:
+            self._scheduler = None
+
+        self._evaluate_schedule(force=True)
+
+    def _evaluate_schedule(self, force: bool = False) -> None:
+        if not self.num_sources:
+            if force or self._display_indices:
+                self._display_indices = []
+                self._update_sidebar_titles()
+            return
+
+        assignments: Dict[int, str] = {}
+        if self._scheduler and self._scheduler.has_rules:
+            try:
+                assignments = self._scheduler.current_assignments()
+            except Exception as ex:
+                self.log.error("failed to evaluate schedule: %s", ex, extra={"source": "schedule"})
+                assignments = {}
+
+        new_indices, conflicts = compute_slot_assignments(
+            self.num_sources,
+            assignments,
+            self._source_index_by_name,
+        )
+
+        if conflicts:
+            for pane, name, reason in conflicts:
+                self.log.warning(
+                    "schedule conflict on pane %s (%s): %s",
+                    pane,
+                    name,
+                    reason,
+                    extra={"source": "schedule"},
+                )
+
+        if force or new_indices != self._display_indices:
+            self._display_indices = new_indices
+            self._apply_display_mapping()
 
     def _apply_config_object(self, cfg: Config):
         self.cfg = cfg
         self.sources = cfg.sources[:] if cfg.sources else []
         self.num_sources = len(self.sources)
+        self._display_indices = list(range(self.num_sources))
+        self._source_index_by_name = {s.name: idx for idx, s in enumerate(self.sources)}
         self.current_page = 0
         self.state.set_active(0 if self.num_sources else 0)
 
@@ -318,6 +437,7 @@ class MainWindow(QMainWindow):
         self._create_source_widgets()
         self._setup_initial_loading_tracker()
         self._build_root_and_sidebar()
+        self._setup_scheduler()
         self.apply_theme(cfg.ui.theme)
         try:
             i18n.set_language(cfg.ui.language or i18n.get_language())
@@ -330,11 +450,7 @@ class MainWindow(QMainWindow):
             self._place_overlay_burger()
 
         if getattr(self, "sidebar", None):
-            try:
-                self.sidebar.set_titles([s.name for s in self.sources])
-                self.sidebar.set_active_global_index(self.state.active_index)
-            except Exception:
-                pass
+            self._update_sidebar_titles()
 
         self._setup_shortcuts()
         self.apply_mode(self.state.mode)
@@ -409,10 +525,12 @@ class MainWindow(QMainWindow):
 
     # ---------- Layout Umschaltungen ----------
     def _attach_single(self, idx: int):
-        if not (0 <= idx < len(self.source_widgets)):
+        if not (0 <= idx < self.num_sources):
             return
         _clear_layout(self.single_layout)
-        _attach(self.source_widgets[idx], self.single_layout)
+        actual = self._resolve_display_index(idx)
+        if 0 <= actual < len(self.source_widgets):
+            _attach(self.source_widgets[actual], self.single_layout)
 
     def _attach_quad_page(self, page: int):
         self.current_page = page
@@ -425,9 +543,11 @@ class MainWindow(QMainWindow):
         start = page * self.page_size
         items: List[QWidget] = []
         for i in range(4):
-            idx = start + i
-            if idx < self.num_sources:
-                items.append(self.source_widgets[idx])
+            slot = start + i
+            if slot < self.num_sources:
+                actual = self._resolve_display_index(slot)
+                if 0 <= actual < len(self.source_widgets):
+                    items.append(self.source_widgets[actual])
 
         n = len(items)
 
@@ -469,6 +589,10 @@ class MainWindow(QMainWindow):
     # ---------- Einstellungen ----------
     def open_settings(self):
         logging_cfg = getattr(self.cfg, "logging", None)
+        try:
+            schedule_payload = [asdict(s) for s in getattr(self.cfg, "schedules", []) or []]
+        except Exception:
+            schedule_payload = []
         dlg = SettingsDialog(
             nav_orientation=self.cfg.ui.nav_orientation,
             enable_hamburger=self.cfg.ui.enable_hamburger,
@@ -479,6 +603,8 @@ class MainWindow(QMainWindow):
             split_enabled=self.cfg.ui.split_enabled,
             shortcuts=self.cfg.ui.shortcuts,
             remote_export=logging_cfg.remote_export if logging_cfg else None,
+            schedule_data=schedule_payload,
+            source_names=[s.name for s in self.sources],
             backup_handler=self._backup_config,
             restore_handler=self._restore_config,
             parent=self
@@ -517,6 +643,19 @@ class MainWindow(QMainWindow):
             self.cfg.ui.logo_path = res["logo_path"]
             self.cfg.ui.shortcuts = res.get("shortcuts", self.cfg.ui.shortcuts)
 
+            schedule_res = res.get("schedule")
+            if schedule_res is not None:
+                try:
+                    new_schedules = parse_schedule_definitions(schedule_res, strict=True)
+                except ValueError as ex:
+                    QMessageBox.warning(
+                        self,
+                        tr("Invalid schedule"),
+                        tr("The provided schedule could not be applied: {error}", error=str(ex)),
+                    )
+                else:
+                    self.cfg.schedules = new_schedules
+
             remote_export_res = res.get("remote_export")
             if remote_export_res is not None and logging_cfg is not None:
                 previous_remote = getattr(logging_cfg, "remote_export", None)
@@ -536,6 +675,7 @@ class MainWindow(QMainWindow):
             self.apply_theme(self.cfg.ui.theme)
             i18n.set_language(self.cfg.ui.language)
             self._build_root_and_sidebar()
+            self._setup_scheduler()
             if not self.cfg.ui.enable_hamburger:
                 self.set_sidebar_collapsed(False)
 
@@ -545,9 +685,6 @@ class MainWindow(QMainWindow):
                     w.set_placeholder_gif(self.cfg.ui.placeholder_gif_path)
                     if not self.cfg.ui.placeholder_enabled:
                         w.show_view()
-
-            self.sidebar.set_titles([s.name for s in self.sources])
-            self.sidebar.set_active_global_index(self.state.active_index)
 
             self._setup_shortcuts()
 
@@ -669,9 +806,11 @@ class MainWindow(QMainWindow):
         if self.state.mode == ViewMode.SINGLE:
             self._attach_single(idx)
             # Sichtbares LocalAppWidget im Single Mode nachskalieren
-            w = self.source_widgets[idx]
-            if isinstance(w, LocalAppWidget):
-                w.force_fit()
+            actual = self._resolve_display_index(idx)
+            if 0 <= actual < len(self.source_widgets):
+                w = self.source_widgets[actual]
+                if isinstance(w, LocalAppWidget):
+                    w.force_fit()
         if self.sidebar and self.sidebar.isVisible():
             self.sidebar.set_active_global_index(idx)
 
@@ -853,10 +992,14 @@ class MainWindow(QMainWindow):
     # ---------- Fenster Spy nur aus Einstellungen ----------
     def _open_window_spy(self):
         idx = self.state.active_index
-        if not (0 <= idx < len(self.source_widgets)):
+        if not (0 <= idx < self.num_sources):
             QMessageBox.information(self, "Fenster Spy", "Kein aktives Widget.")
             return
-        w = self.source_widgets[idx]
+        actual = self._resolve_display_index(idx)
+        if not (0 <= actual < len(self.source_widgets)):
+            QMessageBox.information(self, "Fenster Spy", "Kein aktives Widget.")
+            return
+        w = self.source_widgets[actual]
         if not isinstance(w, LocalAppWidget):
             QMessageBox.information(self, "Fenster Spy", "Der aktive Slot ist keine lokale Anwendung.")
             return
