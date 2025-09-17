@@ -519,15 +519,18 @@ class MainWindow(QMainWindow):
 
             remote_export_res = res.get("remote_export")
             if remote_export_res is not None and logging_cfg is not None:
+                previous_remote = getattr(logging_cfg, "remote_export", None)
+                needs_reinit = previous_remote != remote_export_res
                 logging_cfg.remote_export = remote_export_res
-                try:
-                    init_logging(logging_cfg)
-                except Exception as ex:
-                    self.log.error(
-                        "failed to apply updated logging configuration: %s",
-                        ex,
-                        extra={"source": "logging"},
-                    )
+                if needs_reinit:
+                    try:
+                        init_logging(logging_cfg)
+                    except Exception as ex:
+                        self.log.error(
+                            "failed to apply updated logging configuration: %s",
+                            ex,
+                            extra={"source": "logging"},
+                        )
 
             # Anwenden
             self.apply_theme(self.cfg.ui.theme)
