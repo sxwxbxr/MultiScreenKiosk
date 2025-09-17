@@ -3,11 +3,74 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from modules.utils.resource_loader import (
+    get_resource_path,
+    load_resource_text,
+)
+
 log = logging.getLogger(__name__)
+
+
+def _iter_default_config_paths() -> List[Path]:
+    """Return possible locations of a bundled default config."""
+
+    here = Path(__file__).resolve().parent
+    module_root = here.parent
+    candidates: List[Path] = []
+
+    def add(path: Path) -> None:
+        if path not in candidates:
+            candidates.append(path)
+
+    add(module_root / "config.json")
+    add(here / "config.json")
+
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).resolve().parent
+        add(exe_dir / "config.json")
+        add(exe_dir / "modules" / "config.json")
+        meipass = Path(getattr(sys, "_MEIPASS", exe_dir))
+        add(meipass / "config.json")
+        add(meipass / "modules" / "config.json")
+
+    return candidates
+
+
+def find_bundled_config() -> Optional[Path]:
+    """Return the first bundled default config that exists, if any."""
+
+    for candidate in _iter_default_config_paths():
+        if candidate.exists():
+            return candidate
+    return get_resource_path("config.json")
+
+
+def _load_default_config_payload() -> Optional[Dict[str, Any]]:
+    bundled = find_bundled_config()
+    if not bundled:
+        text = load_resource_text("config.json")
+        if not text:
+            return None
+        try:
+            return json.loads(text)
+        except Exception:
+            return None
+    try:
+        with bundled.open("r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception as ex:
+        log.warning(
+            "Failed to read bundled default config '%s': %s",
+            bundled,
+            ex,
+            extra={"source": "config"},
+        )
+        return None
 
 # Standard Tastaturkuerzel
 DEFAULT_SHORTCUTS: Dict[str, str] = {
@@ -198,6 +261,7 @@ __all__ = [
     "LoggingConfig",
     "load_config",
     "save_config",
+    "find_bundled_config",
     "_parse_sources",
     "_parse_ui",
     "_parse_kiosk",
@@ -651,6 +715,22 @@ def _parse_logging(data: Dict[str, Any]) -> LoggingSettings:
 # =========================
 
 def _defaults_config() -> Config:
+    payload = _load_default_config_payload()
+    if payload:
+        try:
+            return Config(
+                sources=_parse_sources(payload),
+                schedules=parse_schedule_definitions(payload),
+                ui=_parse_ui(payload),
+                kiosk=_parse_kiosk(payload),
+                logging=_parse_logging(payload),
+                updates=_parse_updates(payload),
+            )
+        except Exception as ex:
+            log.error(
+                "Bundled default config invalid: %s", ex, extra={"source": "config"}
+            )
+
     return Config(
         sources=[
             SourceSpec(type="browser", name="Google", url="https://www.google.com"),

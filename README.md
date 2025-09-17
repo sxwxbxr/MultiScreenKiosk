@@ -47,7 +47,7 @@ Target OS: **Windows 10 or newer**.
 ```powershell
 python -m venv .venv
 .venv\Scripts\activate
-pip install -r requirements.txt
+py -m pip install -r kiosk_app/modules/requirements.txt
 ```
 
 Typical `requirements.txt`:
@@ -65,6 +65,9 @@ PySide6-Essentials>=6.6
 ## Getting started
 
 ```powershell
+# run commands from inside the package folder
+cd kiosk_app
+
 # first run (opens setup)
 py -m modules.main --setup
 
@@ -75,7 +78,7 @@ py -m modules.main
 ### Command line options
 
 ```
---config PATH     Use custom config path (default: modules/config.json)
+--config PATH     Use custom config path (default: kiosk_app/modules/config.json in dev, config.json next to the EXE in builds)
 --setup           Force opening the Setup dialog even if config exists
 --log-level LVL   Override log level (DEBUG, INFO, WARNING, ERROR)
 ```
@@ -94,7 +97,7 @@ py -m modules.main
     * **Window class regex** (e.g. `XLMAIN` for Excel)
     * **Child class regex** (e.g. `Edit` for Notepad text control)
     * **Follow child processes** and **Global fallback** (advanced)
-* Tick **Overwrite config** to write `modules/config.json`.
+* Tick **Overwrite config** to persist the setup result to the active `config.json`.
 
 > The setup follows the app’s light/dark theme (custom color palettes do not affect setup).
 
@@ -102,7 +105,7 @@ py -m modules.main
 
 ## Configuration
 
-Location: **`kiosk_app/modules/config.json`** (used by the app).
+Location: **`kiosk_app/modules/config.json`** in a source checkout or `config.json` next to the packaged EXE.
 
 Example:
 
@@ -197,25 +200,29 @@ Default mappings (customizable in Settings):
 Use **PyInstaller**:
 
 ```powershell
-pip install pyinstaller
-pyinstaller ^
+py -m pip install pyinstaller
+py -m PyInstaller ^
   --name MultiScreenKiosk ^
   --noconsole ^
   --clean ^
   --onefile ^
-  --add-data "kiosk_app/modules/config.json;modules" ^
+  --add-data "kiosk_app\modules\config.json;config.json" ^
+  --add-data "kiosk_app\modules\assets;modules\assets" ^
   --collect-all PySide6 ^
   kiosk_app\modules\main.py
 ```
 
+The first `--add-data` line drops the repository’s default `config.json` next to the EXE; the second bundles the splash screen assets so the JSON/GIF animation works in frozen builds.
+
 If WebEngine resources are not found at runtime, switch to a **one-folder** build and include Qt resources:
 
 ```powershell
-pyinstaller ^
+py -m PyInstaller ^
   --name MultiScreenKiosk ^
   --noconsole ^
   --clean ^
-  --add-data "kiosk_app/modules/config.json;modules" ^
+  --add-data "kiosk_app\modules\config.json;config.json" ^
+  --add-data "kiosk_app\modules\assets;modules\assets" ^
   --collect-all PySide6 ^
   kiosk_app\modules\main.py
 ```
@@ -239,7 +246,7 @@ Create a shortcut to `MultiScreenKiosk.exe` and place it in:
 * **WebEngine fails to load** → ensure `PySide6-Addons` is installed.
 * **App doesn’t embed** → run **Window Spy** and refine regex patterns; check app elevation and UWP limitations.
 * **Sidebar overlays** → disable hamburger in Settings or use top orientation.
-* **Nothing after setup** → check that `modules/config.json` contains a non-empty `sources` array.
+* **Nothing after setup** → check that your active `config.json` (the default file ships with the repo) contains a non-empty `sources` array.
 
 ---
 

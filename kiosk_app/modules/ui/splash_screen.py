@@ -3,12 +3,19 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QGuiApplication, QMovie
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QWidget
 
 from modules.utils.i18n import tr
 from modules.utils.logger import get_logger
+
+try:  # pragma: no cover - optional dependency during tests
+    from PySide6.QtLottie import QLottieAnimation  # type: ignore
+    _HAS_QT_LOTTIE = True
+except Exception:  # pragma: no cover - optional dependency
+    QLottieAnimation = None  # type: ignore[assignment]
+    _HAS_QT_LOTTIE = False
 
 
 class SplashScreen(QDialog):
@@ -99,14 +106,17 @@ class SplashScreen(QDialog):
     def _try_load_lottie(self, json_path: Optional[Path | str]) -> bool:
         if not json_path:
             return False
+        if not _HAS_QT_LOTTIE:
+            self._log.warning(
+                "QtLottie module unavailable; falling back to GIF animation.",
+                extra={"source": "ui"},
+            )
+            return False
         path = Path(json_path)
         if not path.exists():
             return False
         try:
-            from PySide6.QtLottie import QLottieAnimation  # type: ignore
-            from PySide6.QtCore import QUrl
-
-            animation = QLottieAnimation(self)
+            animation = QLottieAnimation(self)  # type: ignore[operator]
             animation.setResizeMode(QLottieAnimation.Stretch)
             animation.setSource(QUrl.fromLocalFile(str(path)))
             animation.setLoops(-1)

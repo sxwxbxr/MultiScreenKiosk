@@ -2,29 +2,73 @@
 from __future__ import annotations
 
 import sys
+import ctypes
 import argparse
 import json
+import shutil
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QApplication, QDialog
 
-from modules.utils.config_loader import load_config, save_config, Config, LoggingSettings
+from modules.utils.config_loader import (
+    load_config,
+    save_config,
+    Config,
+    LoggingSettings,
+    find_bundled_config,
+)
 from modules.utils.logger import init_logging, get_logger
 from modules.ui.app_state import AppState
 from modules.ui.main_window import MainWindow
 from modules.ui.setup_dialog import SetupDialog
 from modules.ui.splash_screen import SplashScreen
-from modules.utils.config_loader import Config
 from modules.utils.i18n import i18n, tr
+from modules.utils.resource_loader import get_resource_path
+
+
+# Ensure the splash screen closes even if sources fail to embed so the
+# troubleshooting tools (e.g. Window Spy) remain available. Allow a more generous
+# grace period so slower applications can finish booting before we force the
+# main window on screen.
+FALLBACK_SPLASH_TIMEOUT_MS = 30000
 
 
 def default_cfg_path() -> Path:
     if getattr(sys, "frozen", False):
-        # Pfad neben der EXE
-        return Path(sys.executable).resolve().parent / "config.json"
+        exe_dir = Path(sys.executable).resolve().parent
+        # Prefer a config next to the executable; fall back to legacy
+        # module-relative bundles if present.
+        default_path = exe_dir / "config.json"
+        legacy_bundle = exe_dir / "modules" / "config.json"
+        if legacy_bundle.exists() and not default_path.exists():
+            return legacy_bundle
+        return default_path
     # Dev Modus wie bisher
     return Path(__file__).resolve().parent / "config.json"
+
+
+def _seed_config_from_bundle(target: Path) -> tuple[bool, Optional[str]]:
+    """Copy the bundled default config next to the executable when missing."""
+
+    source = find_bundled_config()
+    if not source:
+        return False, None
+
+    try:
+        if source.resolve() == target.resolve():
+            return False, None
+    except Exception:
+        # Path may not resolve on some virtual filesystems; ignore and continue.
+        pass
+
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+        return True, None
+    except Exception as ex:  # pragma: no cover - filesystem specific
+        return False, f"{source}: {ex}"
 
 
 def _dict_to_config(d: Dict[str, Any]) -> Config:
@@ -35,6 +79,131 @@ def _dict_to_config(d: Dict[str, Any]) -> Config:
         ui=_parse_ui(d),
         kiosk=_parse_kiosk(d),
     )
+
+
+
+def _win32_force_foreground(hwnd: int) -> None:
+    """Best-effort foreground enforcement on Windows."""
+
+    if not sys.platform.startswith("win"):
+        return
+
+    if hwnd <= 0:
+        return
+
+    try:
+        user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    except Exception:
+        return
+
+    attach_thread_input = getattr(user32, "AttachThreadInput", None)
+    get_window_thread_process_id = getattr(user32, "GetWindowThreadProcessId", None)
+    get_current_thread_id = getattr(kernel32, "GetCurrentThreadId", None)
+    set_foreground_window = getattr(user32, "SetForegroundWindow", None)
+    set_active_window = getattr(user32, "SetActiveWindow", None)
+    bring_window_to_top = getattr(user32, "BringWindowToTop", None)
+    show_window = getattr(user32, "ShowWindow", None)
+    set_focus = getattr(user32, "SetFocus", None)
+    set_window_pos = getattr(user32, "SetWindowPos", None)
+    allow_set_foreground_window = getattr(user32, "AllowSetForegroundWindow", None)
+    get_foreground_window = getattr(user32, "GetForegroundWindow", None)
+
+    SW_RESTORE = 9
+    SWP_NOSIZE = 0x0001
+    SWP_NOMOVE = 0x0002
+    SWP_SHOWWINDOW = 0x0040
+    HWND_TOPMOST = ctypes.c_void_p(-1).value
+    HWND_NOTOPMOST = ctypes.c_void_p(-2).value
+
+    attached = False
+    fore_thread = 0
+    current_thread = 0
+
+    try:
+        if allow_set_foreground_window:
+            try:
+                allow_set_foreground_window(0xFFFFFFFF)
+            except Exception:
+                pass
+
+        fore_hwnd = 0
+        if get_foreground_window:
+            try:
+                fore_hwnd = get_foreground_window()
+            except Exception:
+                fore_hwnd = 0
+
+        if (
+            attach_thread_input
+            and get_window_thread_process_id
+            and get_current_thread_id
+            and fore_hwnd
+            and fore_hwnd != hwnd
+        ):
+            try:
+                proc_id = ctypes.c_ulong()
+                fore_thread = get_window_thread_process_id(fore_hwnd, ctypes.byref(proc_id))
+                current_thread = get_current_thread_id()
+                if fore_thread and current_thread and fore_thread != current_thread:
+                    attached = bool(attach_thread_input(fore_thread, current_thread, True))
+            except Exception:
+                attached = False
+
+        if set_window_pos:
+            try:
+                set_window_pos(
+                    hwnd,
+                    HWND_TOPMOST,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+                )
+                set_window_pos(
+                    hwnd,
+                    HWND_NOTOPMOST,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+                )
+            except Exception:
+                pass
+
+        if show_window:
+            try:
+                show_window(hwnd, SW_RESTORE)
+            except Exception:
+                pass
+        if bring_window_to_top:
+            try:
+                bring_window_to_top(hwnd)
+            except Exception:
+                pass
+        if set_active_window:
+            try:
+                set_active_window(hwnd)
+            except Exception:
+                pass
+        if set_focus:
+            try:
+                set_focus(hwnd)
+            except Exception:
+                pass
+        if set_foreground_window:
+            try:
+                set_foreground_window(hwnd)
+            except Exception:
+                pass
+    finally:
+        if attached and attach_thread_input and fore_thread and current_thread:
+            try:
+                attach_thread_input(fore_thread, current_thread, False)
+            except Exception:
+                pass
 
 
 
@@ -93,7 +262,13 @@ def maybe_run_setup(app: QApplication, cfg: Config, cfg_path: Path, force: bool)
 def main() -> int:
     args = parse_args()
 
-    cfg_path = Path(args.config).resolve()
+    cfg_path = Path(args.config).expanduser().resolve()
+    first_run = not cfg_path.exists()
+    seeded_config = False
+    seed_error: Optional[str] = None
+    if first_run:
+        seeded_config, seed_error = _seed_config_from_bundle(cfg_path)
+
     cfg = load_config(cfg_path)
 
     logging_cfg = getattr(cfg, "logging", None)
@@ -115,10 +290,28 @@ def main() -> int:
     log = get_logger(__name__)
     log.info("app starting", extra={"source": "main"})
 
+    if first_run:
+        if seeded_config:
+            log.info(
+                "seeded default config to %s", cfg_path, extra={"source": "main"}
+            )
+        elif seed_error:
+            log.warning(
+                "could not seed bundled default config: %s",
+                seed_error,
+                extra={"source": "main"},
+            )
+        else:
+            log.info(
+                "no bundled default config found; using in-memory defaults",
+                extra={"source": "main"},
+            )
+
     app = QApplication(sys.argv)
 
     # Optionales Setup. Bei Abbruch sofort beenden.
-    cfg_after = maybe_run_setup(app, cfg, cfg_path, force=args.setup)
+    force_setup = bool(args.setup or first_run)
+    cfg_after = maybe_run_setup(app, cfg, cfg_path, force=force_setup)
     if cfg_after is None:
         app.quit()
         return 0
@@ -132,9 +325,8 @@ def main() -> int:
 
     # Splash Screen
     splash = None
-    assets_dir = Path(__file__).resolve().parent / "assets"
-    splash_json = assets_dir / "tZuFzJlE5P.json"
-    splash_gif = assets_dir / "tZuFzJlE5P.gif"
+    splash_json = get_resource_path("assets/tZuFzJlE5P.json")
+    splash_gif = get_resource_path("assets/tZuFzJlE5P.gif")
     try:
         splash = SplashScreen(
             json_path=splash_json,
@@ -172,8 +364,10 @@ def main() -> int:
         _present_main_window._done = True  # type: ignore[attr-defined]
 
         try:
-            if win.isMinimized() or not win.isVisible():
+            if win.isMinimized():
                 win.showNormal()
+            elif not win.isVisible():
+                win.show()
         except Exception:
             pass
 
@@ -190,17 +384,55 @@ def main() -> int:
 
         if splash:
             splash.finish(win)
-        else:
+
+        def _ensure_foreground() -> None:
             try:
+                if win.isMinimized() and not win.isFullScreen():
+                    win.showNormal()
+                elif not win.isVisible():
+                    win.show()
+
+                current_state = win.windowState()
+                if current_state & Qt.WindowMinimized:
+                    win.setWindowState(current_state & ~Qt.WindowMinimized)
+
+                app.setActiveWindow(win)
                 win.raise_()
                 win.activateWindow()
+
+                handle = win.windowHandle()
+                if handle is not None:
+                    handle.requestActivate()
+
+                try:
+                    hwnd = int(win.winId())
+                except Exception:
+                    hwnd = 0
+                if hwnd:
+                    _win32_force_foreground(hwnd)
             except Exception:
                 pass
+
+        _ensure_foreground()
+        for delay in (150, 400, 800, 1500):
+            QTimer.singleShot(delay, _ensure_foreground)
 
         log.info("ui shown", extra={"source": "main"})
 
     _present_main_window._done = False  # type: ignore[attr-defined]
     win.initial_load_finished.connect(_present_main_window)
+
+    def _force_present_main_window() -> None:
+        if getattr(_present_main_window, "_done", False):
+            return
+        log.warning(
+            "initial embedding still pending after %s ms; showing main window so tools remain accessible",
+            FALLBACK_SPLASH_TIMEOUT_MS,
+            extra={"source": "main"},
+        )
+        _present_main_window()
+
+    QTimer.singleShot(FALLBACK_SPLASH_TIMEOUT_MS, _force_present_main_window)
     if getattr(win, "_initial_loading_complete", False):  # pragma: no cover - defensive
         _present_main_window()
 
