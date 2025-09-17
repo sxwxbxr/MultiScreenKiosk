@@ -21,10 +21,44 @@ from modules.utils.i18n import i18n, tr
 
 def default_cfg_path() -> Path:
     if getattr(sys, "frozen", False):
-        # Pfad neben der EXE
-        return Path(sys.executable).resolve().parent / "config.json"
+        exe_dir = Path(sys.executable).resolve().parent
+        # Prefer a config next to the executable; fall back to legacy
+        # module-relative bundles if present.
+        default_path = exe_dir / "config.json"
+        legacy_bundle = exe_dir / "modules" / "config.json"
+        if legacy_bundle.exists() and not default_path.exists():
+            return legacy_bundle
+        return default_path
     # Dev Modus wie bisher
     return Path(__file__).resolve().parent / "config.json"
+
+
+def _resolve_assets_dir() -> Path:
+    """Locate the assets directory for both source and frozen builds."""
+    here = Path(__file__).resolve().parent
+    candidates = [here / "assets"]
+
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).resolve().parent
+        candidates.extend([
+            exe_dir / "assets",
+            exe_dir / "modules" / "assets",
+        ])
+        meipass = Path(getattr(sys, "_MEIPASS", exe_dir))
+        candidates.extend([
+            meipass / "assets",
+            meipass / "modules" / "assets",
+        ])
+
+    seen = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        if candidate.exists():
+            return candidate
+
+    return candidates[0]
 
 
 def _dict_to_config(d: Dict[str, Any]) -> Config:
@@ -132,7 +166,7 @@ def main() -> int:
 
     # Splash Screen
     splash = None
-    assets_dir = Path(__file__).resolve().parent / "assets"
+    assets_dir = _resolve_assets_dir()
     splash_json = assets_dir / "tZuFzJlE5P.json"
     splash_gif = assets_dir / "tZuFzJlE5P.gif"
     try:
