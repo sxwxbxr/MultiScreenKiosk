@@ -28,8 +28,10 @@ from modules.utils.resource_loader import get_resource_path
 
 
 # Ensure the splash screen closes even if sources fail to embed so the
-# troubleshooting tools (e.g. Window Spy) remain available.
-FALLBACK_SPLASH_TIMEOUT_MS = 8000
+# troubleshooting tools (e.g. Window Spy) remain available. Allow a more generous
+# grace period so slower applications can finish booting before we force the
+# main window on screen.
+FALLBACK_SPLASH_TIMEOUT_MS = 30000
 
 
 def default_cfg_path() -> Path:
@@ -270,7 +272,8 @@ def main() -> int:
         if getattr(_present_main_window, "_done", False):
             return
         log.warning(
-            "initial embedding still pending; showing main window so tools remain accessible",
+            "initial embedding still pending after %s ms; showing main window so tools remain accessible",
+            FALLBACK_SPLASH_TIMEOUT_MS,
             extra={"source": "main"},
         )
         _present_main_window()
