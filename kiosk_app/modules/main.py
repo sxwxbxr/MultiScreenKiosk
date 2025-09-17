@@ -23,6 +23,7 @@ from modules.ui.main_window import MainWindow
 from modules.ui.setup_dialog import SetupDialog
 from modules.ui.splash_screen import SplashScreen
 from modules.utils.i18n import i18n, tr
+from modules.utils.resource_loader import get_resource_path
 
 
 def default_cfg_path() -> Path:
@@ -37,34 +38,6 @@ def default_cfg_path() -> Path:
         return default_path
     # Dev Modus wie bisher
     return Path(__file__).resolve().parent / "config.json"
-
-
-def _resolve_assets_dir() -> Path:
-    """Locate the assets directory for both source and frozen builds."""
-    here = Path(__file__).resolve().parent
-    candidates = [here / "assets"]
-
-    if getattr(sys, "frozen", False):
-        exe_dir = Path(sys.executable).resolve().parent
-        candidates.extend([
-            exe_dir / "assets",
-            exe_dir / "modules" / "assets",
-        ])
-        meipass = Path(getattr(sys, "_MEIPASS", exe_dir))
-        candidates.extend([
-            meipass / "assets",
-            meipass / "modules" / "assets",
-        ])
-
-    seen = set()
-    for candidate in candidates:
-        if candidate in seen:
-            continue
-        seen.add(candidate)
-        if candidate.exists():
-            return candidate
-
-    return candidates[0]
 
 
 def _seed_config_from_bundle(target: Path) -> tuple[bool, Optional[str]]:
@@ -218,9 +191,8 @@ def main() -> int:
 
     # Splash Screen
     splash = None
-    assets_dir = _resolve_assets_dir()
-    splash_json = assets_dir / "tZuFzJlE5P.json"
-    splash_gif = assets_dir / "tZuFzJlE5P.gif"
+    splash_json = get_resource_path("assets/tZuFzJlE5P.json")
+    splash_gif = get_resource_path("assets/tZuFzJlE5P.gif")
     try:
         splash = SplashScreen(
             json_path=splash_json,

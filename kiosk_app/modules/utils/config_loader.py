@@ -8,6 +8,11 @@ from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from modules.utils.resource_loader import (
+    get_resource_path,
+    load_resource_text,
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -42,13 +47,19 @@ def find_bundled_config() -> Optional[Path]:
     for candidate in _iter_default_config_paths():
         if candidate.exists():
             return candidate
-    return None
+    return get_resource_path("config.json")
 
 
 def _load_default_config_payload() -> Optional[Dict[str, Any]]:
     bundled = find_bundled_config()
     if not bundled:
-        return None
+        text = load_resource_text("config.json")
+        if not text:
+            return None
+        try:
+            return json.loads(text)
+        except Exception:
+            return None
     try:
         with bundled.open("r", encoding="utf-8") as fh:
             return json.load(fh)

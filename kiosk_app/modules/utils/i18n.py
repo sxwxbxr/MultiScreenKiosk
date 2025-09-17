@@ -1,12 +1,10 @@
 import json
 import locale
-from pathlib import Path
 from typing import Dict, Iterable, List, NamedTuple
 
 from PySide6.QtCore import QObject, Signal
 
-
-TRANSLATION_DIR = Path(__file__).resolve().parent.parent / "assets" / "i18n"
+from modules.utils.resource_loader import get_resource_dir
 
 
 class LanguageInfo(NamedTuple):
@@ -53,8 +51,9 @@ class LanguageManager(QObject):
         translations: Dict[str, Dict[str, str]] = {}
         meta: Dict[str, Dict[str, str]] = {}
 
-        if TRANSLATION_DIR.exists():
-            for file_path in sorted(TRANSLATION_DIR.glob("*.json")):
+        translation_dir = get_resource_dir("assets/i18n")
+        if translation_dir and translation_dir.exists():
+            for file_path in sorted(translation_dir.glob("*.json")):
                 code = _normalize_language_code(file_path.stem)
                 if not code:
                     continue
