@@ -76,7 +76,7 @@ class WindowSpyDialog(QDialog):
         root.addWidget(self.table, 1)
         root.addLayout(bottom)
 
-        i18n.language_changed.connect(lambda _l: self._apply_translations())
+        i18n.language_changed.connect(self._on_language_changed)
         self._apply_translations()
         self.reload()
         self._center_on_parent()
@@ -111,6 +111,9 @@ class WindowSpyDialog(QDialog):
                     res.add(child)
                     queue.append(child)
         return res
+
+    def _on_language_changed(self, _lang: str) -> None:
+        self._apply_translations()
 
     def _apply_translations(self):
         self.setWindowTitle(tr("Window Spy"))

@@ -242,7 +242,7 @@ class SettingsDialog(QDialog):
 
         self._refresh_config_actions()
 
-        i18n.language_changed.connect(lambda _l: self._apply_translations())
+        i18n.language_changed.connect(self._on_language_changed)
         self._apply_translations()
         self._update_remote_button_caption()
 
@@ -512,6 +512,9 @@ class SettingsDialog(QDialog):
             QCheckBox::indicator { width: 18px; height: 18px; border-radius: 4px; border:1px solid rgba(128,128,128,0.45); background: rgba(255,255,255,0.03); }
             QCheckBox::indicator:checked { background:#0a84ff; border-color:#0a84ff; }
         """)
+
+    def _on_language_changed(self, _lang: str) -> None:
+        self._apply_translations()
 
     def _apply_translations(self):
         self.title_lbl.setText(tr("Settings"))

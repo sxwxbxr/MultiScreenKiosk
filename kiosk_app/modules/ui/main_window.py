@@ -105,7 +105,7 @@ class MainWindow(QMainWindow):
 
         # Theme
         self.apply_theme(self.cfg.ui.theme)
-        i18n.language_changed.connect(lambda _l: self.retranslate_ui())
+        i18n.language_changed.connect(self._on_language_changed)
         self.retranslate_ui()
 
         # Shortcuts
@@ -582,6 +582,9 @@ class MainWindow(QMainWindow):
         if self.cfg.ui.split_enabled:
             _add("toggle_mode", mapping.get("toggle_mode"), self.on_toggle_mode)
         _add("toggle_kiosk", mapping.get("toggle_kiosk"), self.toggle_kiosk)
+
+    def _on_language_changed(self, _lang: str) -> None:
+        self.retranslate_ui()
 
     def retranslate_ui(self):
         self.overlay_burger.setToolTip(tr("Menu"))

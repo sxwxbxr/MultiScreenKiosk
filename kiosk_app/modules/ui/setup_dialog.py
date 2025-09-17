@@ -97,9 +97,12 @@ class _SourceRow(QWidget):
         self.allow_global_cb = QCheckBox("", self)
         grid.addWidget(self.allow_global_cb, row, 2)
 
-        i18n.language_changed.connect(lambda _l: self._apply_translations())
+        i18n.language_changed.connect(self._on_language_changed)
         self._apply_translations()
         self._on_type_change()
+
+    def _on_language_changed(self, _lang: str) -> None:
+        self._apply_translations()
 
     def _apply_translations(self):
         self.lbl_name.setText(tr("Name"))
@@ -281,10 +284,13 @@ class SetupDialog(QDialog):
 
         self._result: Dict[str, Any] = {}
 
-        i18n.language_changed.connect(lambda _l: self._apply_translations())
+        i18n.language_changed.connect(self._on_language_changed)
         self._apply_translations()
 
     # -------- Theme --------
+
+    def _on_language_changed(self, _lang: str) -> None:
+        self._apply_translations()
 
     def _apply_translations(self):
         self.setWindowTitle(tr("Initial setup"))

@@ -65,12 +65,15 @@ class LogStatsDialog(QDialog):
         self._timer.timeout.connect(self._refresh)
         self._timer.start()
 
-        i18n.language_changed.connect(lambda _l: self._apply_translations())
+        i18n.language_changed.connect(self._handle_language_changed)
         self._refresh()
 
     def _apply_translations(self):
         self.setWindowTitle(tr("Log Statistics"))
         self.btn_close.setText(tr("Close"))
+
+    def _handle_language_changed(self, _lang: str) -> None:
+        self._apply_translations()
 
     def closeEvent(self, ev):
         try:
@@ -191,7 +194,7 @@ class LogViewer(QDialog):
         self.btn_open.clicked.connect(self._open_external)
         self.btn_stats.clicked.connect(self._open_stats_window)
 
-        i18n.language_changed.connect(lambda _l: self._apply_translations())
+        i18n.language_changed.connect(self._handle_language_changed)
         self._apply_translations()
 
         # Timer Polling
@@ -370,6 +373,9 @@ class LogViewer(QDialog):
         self.btn_clear.setText(tr("Clear file"))
         self.btn_open.setText(tr("Open file"))
         self.btn_stats.setText(tr("Log Statistics"))
+
+    def _handle_language_changed(self, _lang: str) -> None:
+        self._apply_translations()
 
     def _open_stats_window(self):
         dlg = LogStatsDialog(self._path, self)
