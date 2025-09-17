@@ -8,6 +8,7 @@ import shutil
 from pathlib import Path
 from typing import Dict, Any, Optional
 
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QDialog
 
 from modules.utils.config_loader import (
@@ -24,6 +25,11 @@ from modules.ui.setup_dialog import SetupDialog
 from modules.ui.splash_screen import SplashScreen
 from modules.utils.i18n import i18n, tr
 from modules.utils.resource_loader import get_resource_path
+
+
+# Ensure the splash screen closes even if sources fail to embed so the
+# troubleshooting tools (e.g. Window Spy) remain available.
+FALLBACK_SPLASH_TIMEOUT_MS = 8000
 
 
 def default_cfg_path() -> Path:
@@ -259,6 +265,17 @@ def main() -> int:
 
     _present_main_window._done = False  # type: ignore[attr-defined]
     win.initial_load_finished.connect(_present_main_window)
+
+    def _force_present_main_window() -> None:
+        if getattr(_present_main_window, "_done", False):
+            return
+        log.warning(
+            "initial embedding still pending; showing main window so tools remain accessible",
+            extra={"source": "main"},
+        )
+        _present_main_window()
+
+    QTimer.singleShot(FALLBACK_SPLASH_TIMEOUT_MS, _force_present_main_window)
     if getattr(win, "_initial_loading_complete", False):  # pragma: no cover - defensive
         _present_main_window()
 
