@@ -604,6 +604,7 @@ class MainWindow(QMainWindow):
             shortcuts=self.cfg.ui.shortcuts,
             remote_export=logging_cfg.remote_export if logging_cfg else None,
             schedule_data=schedule_payload,
+            source_names=[s.name for s in self.sources],
             backup_handler=self._backup_config,
             restore_handler=self._restore_config,
             parent=self
