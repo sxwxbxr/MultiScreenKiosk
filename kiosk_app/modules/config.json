@@ -2,66 +2,22 @@
   "sources": [
     {
       "type": "browser",
-      "name": "Google",
-      "url": "https://www.google.com",
-      "launch_cmd": null,
-      "args": "",
-      "embed_mode": "native_window",
-      "window_title_pattern": null,
-      "window_class_pattern": null,
-      "child_window_class_pattern": null,
-      "child_window_title_pattern": null,
-      "follow_children": true,
-      "allow_global_fallback": false,
-      "web_url": null
-    },
-    {
-      "type": "browser",
-      "name": "ChatGPT",
-      "url": "https://chat.openai.com",
-      "launch_cmd": null,
-      "args": "",
-      "embed_mode": "native_window",
-      "window_title_pattern": null,
-      "window_class_pattern": null,
-      "child_window_class_pattern": null,
-      "child_window_title_pattern": null,
-      "follow_children": true,
-      "allow_global_fallback": false,
-      "web_url": null
-    },
-    {
-      "type": "browser",
-      "name": "Proton",
-      "url": "https://mail.proton.me",
-      "launch_cmd": null,
-      "args": "",
-      "embed_mode": "native_window",
-      "window_title_pattern": null,
-      "window_class_pattern": null,
-      "child_window_class_pattern": null,
-      "child_window_title_pattern": null,
-      "follow_children": true,
-      "allow_global_fallback": false,
-      "web_url": null
+      "name": "WCU",
+      "url": "https://google.com"
     },
     {
       "type": "local",
-      "name": "Editor",
-      "url": null,
-      "launch_cmd": "C:\\Windows\\System32\\notepad.exe",
-      "args": "",
+      "name": "WCS",
+      "launch_cmd": "D:/Telsonic/WCS/BIN200/Telsonic.TS.TFX.UI.App.exe",
+      "args": "D:\\Telsonic\\WCS\\DATA200\\Config\\WCS.tfcon",
       "embed_mode": "native_window",
-      "window_title_pattern": ".*(Notepad|Editor).*",
+      "window_title_pattern": null,
       "window_class_pattern": null,
-      "child_window_class_pattern": "Edit",
-      "child_window_title_pattern": null,
+      "child_window_class_pattern": null,
       "follow_children": true,
-      "allow_global_fallback": false,
-      "web_url": null
+      "allow_global_fallback": false
     }
   ],
-  "schedules": [],
   "ui": {
     "start_mode": "quad",
     "split_enabled": true,
@@ -72,18 +28,7 @@
     "placeholder_enabled": true,
     "placeholder_gif_path": "",
     "theme": "light",
-    "language": "",
-    "logo_path": "",
-    "shortcuts": {
-      "select_1": "Ctrl+1",
-      "select_2": "Ctrl+2",
-      "select_3": "Ctrl+3",
-      "select_4": "Ctrl+4",
-      "next_page": "Ctrl+Right",
-      "prev_page": "Ctrl+Left",
-      "toggle_mode": "Ctrl+Q",
-      "toggle_kiosk": "F11"
-    }
+    "logo_path": ""
   },
   "kiosk": {
     "monitor_index": 0,
@@ -120,14 +65,5 @@
       "schedule_minutes": null,
       "notify_failures": true
     }
-  },
-  "updates": {
-    "enabled": false,
-    "feed_url": "",
-    "channel": "stable",
-    "check_interval_hours": 6,
-    "verify_tls": true,
-    "download_dir": null,
-    "auto_install": true
   }
 }
