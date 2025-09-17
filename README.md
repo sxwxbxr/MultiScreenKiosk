@@ -1,48 +1,80 @@
 # MultiScreenKiosk
 
-A production-ready fullscreen kiosk for Windows (Qt / PySide6 + Qt WebEngine).
-Switch between single view and a 2×2 grid, embed websites and native Windows apps, and control everything from a clean sidebar or header. Includes a first-run setup, live logging tools, and a Window Spy to help you embed complex apps.
+A production-ready fullscreen kiosk for Windows built with Qt / PySide6 and Qt WebEngine. MultiScreenKiosk lets you combine web
+content and native Windows applications in a polished kiosk experience that supports both single-view and 2×2 grid layouts.
+
+---
+
+## Table of contents
+
+- [Highlights](#highlights)
+- [Architecture at a glance](#architecture-at-a-glance)
+- [System requirements](#system-requirements)
+- [Development setup](#development-setup)
+- [Running the kiosk](#running-the-kiosk)
+  - [Command-line options](#command-line-options)
+  - [First-run setup](#first-run-setup)
+- [Configuration reference](#configuration-reference)
+  - [Backup & restore](#backup--restore)
+  - [Embedding local applications](#embedding-local-applications)
+- [Keyboard shortcuts](#keyboard-shortcuts)
+- [Logging](#logging)
+- [Building a distributable](#building-a-distributable)
+- [Autostarting on Windows](#autostarting-on-windows)
+- [Troubleshooting](#troubleshooting)
+- [Roadmap](#roadmap)
+- [License](#license)
+- [Credits](#credits)
 
 ---
 
 ## Highlights
 
-* **True kiosk fullscreen** (frameless, F11 toggle)
-* **Navigation**: sidebar **left** or **top**, optional hamburger overlay
-* **Layouts**: **Single** view or **Quad** 2×2; smart tiling when fewer than 4 panes
-* **Sources per pane**
+**Kiosk experience**
 
-  * **Browser** via Qt WebEngine
-  * **Local app** (native window embedding with Win32 `SetParent`), watchdog + auto-restart
-* **First-run Setup** dialog to define sources (names, URLs, EXE + args, title/class regex)
-* **Settings** inside the app: theme (light/dark), logo, placeholder GIF, orientation, hamburger
-* **Placeholders** while web views load (optional custom GIF)
-* **Keyboard**: Configurable shortcuts (defaults: Ctrl+1…4 select view, Ctrl+Q switch layout, F11 kiosk, Shift+Close to exit in kiosk)
-* **Logging tools**
+- Frameless fullscreen window with F11 toggle and a Shift+Close override for safe exits.
+- Sidebar navigation docked on the left or top, optional hamburger overlay, and configurable logo/placeholder assets.
 
-  * Per-launch log file **`YYYYMMDD_N_Logfile.log`**
-  * In-app **Log Viewer** (with filter, clear file)
-  * **Log Stats** window (INFO/WARN/ERROR/DEBUG counters + live file size)
-* **Auto-update** downloads and installs new releases automatically with verification and rollback
-* **Window Spy** (from Settings) to inspect running windows (title, class, child class) for embedding
+**Flexible layouts**
 
-Target OS: **Windows 10 or newer**.
+- Switch between a single-view layout and a quad 2×2 grid.
+- Smart tiling gracefully handles configurations with fewer than four panes.
 
----
+**Rich content sources**
 
-## Architecture (short)
+- Embed websites with Qt WebEngine.
+- Host native Win32 applications using the Windows `SetParent` API, complete with a watchdog and automatic restarts.
+- Built-in Window Spy helps you collect the title/class details needed for complex embeddings.
 
-* **UI** (PySide6): `MainWindow`, `Sidebar`, `SettingsDialog`, `SetupDialog`, `BrowserHostWidget`
-* **ViewModel**: `AppState` (active index, mode)
-* **Services**: `BrowserService` (per web view), `LocalAppService` (spawn + embed + watchdog)
-* **Utils**: `config_loader`, `logger` (async queue, rotating files, UI bridge)
+**Configuration & theming**
+
+- First-run setup wizard to define sources, URLs, executable paths, window-matching rules, and more.
+- In-app Settings dialog lets you tune the theme (light/dark), layout, sidebar, placeholder animations, and keyboard mappings.
+
+**Operations toolkit**
+
+- Per-launch log files, live log viewer with filtering, and a log statistics dashboard (INFO/WARN/ERROR counters plus file size).
+- Automatic update workflow with verification and rollback.
+
+Target operating system: **Windows 10 or newer**.
 
 ---
 
-## Requirements
+## Architecture at a glance
 
-* Python **3.10–3.13** (x64)
-* PySide6 with WebEngine
+- **UI (PySide6):** `MainWindow`, `Sidebar`, `SettingsDialog`, `SetupDialog`, `BrowserHostWidget`
+- **View model:** `AppState` (active index, mode switching)
+- **Services:** `BrowserService` (web views), `LocalAppService` (process spawning, embedding, and watchdog)
+- **Utilities:** configuration loader and asynchronous logger with a bridge to the UI
+
+---
+
+## System requirements
+
+- Python **3.10 – 3.13** (64-bit)
+- PySide6 with WebEngine components
+
+Install dependencies in a virtual environment:
 
 ```powershell
 python -m venv .venv
@@ -50,64 +82,65 @@ python -m venv .venv
 py -m pip install -r kiosk_app/modules/requirements.txt
 ```
 
-Typical `requirements.txt`:
-
-```
-PySide6>=6.6
-PySide6-Addons>=6.6
-PySide6-Essentials>=6.6
-```
-
-> If WebEngine is missing, install `PySide6-Addons` as well.
+> If WebEngine is missing, ensure `PySide6-Addons` is installed alongside `PySide6` and `PySide6-Essentials`.
 
 ---
 
-## Getting started
+## Development setup
+
+1. Clone the repository and open a terminal in the project root.
+2. Create and activate a Python virtual environment (see [System requirements](#system-requirements)).
+3. Install the dependencies from `kiosk_app/modules/requirements.txt`.
+
+The repository ships with a default configuration at `kiosk_app/modules/config.json`; you can modify it directly or use the
+first-run wizard described below.
+
+---
+
+## Running the kiosk
+
+Run commands from inside the `kiosk_app` directory:
 
 ```powershell
-# run commands from inside the package folder
 cd kiosk_app
 
-# first run (opens setup)
+# First run (opens setup wizard)
 py -m modules.main --setup
 
-# normal run
+# Normal run
 py -m modules.main
 ```
 
-### Command line options
+### Command-line options
 
-```
---config PATH     Use custom config path (default: kiosk_app/modules/config.json in dev, config.json next to the EXE in builds)
---setup           Force opening the Setup dialog even if config exists
+```text
+--config PATH     Use a custom configuration file (default: kiosk_app/modules/config.json in development,
+                  config.json next to the executable in packaged builds)
+--setup           Force the setup dialog even if a configuration exists
 --log-level LVL   Override log level (DEBUG, INFO, WARNING, ERROR)
 ```
 
----
+### First-run setup
 
-## First-run Setup
-
-* Choose **number of panes**.
-* For each pane:
-
-  * **Browser**: set **Name** and **URL**.
-  * **Local**: set **Name**, **EXE**, optional **Arguments**, and optionally:
-
-    * **Window title regex** (e.g. `.*(Notepad|Editor).*`)
-    * **Window class regex** (e.g. `XLMAIN` for Excel)
-    * **Child class regex** (e.g. `Edit` for Notepad text control)
-    * **Follow child processes** and **Global fallback** (advanced)
-* Tick **Overwrite config** to persist the setup result to the active `config.json`.
-
-> The setup follows the app’s light/dark theme (custom color palettes do not affect setup).
+- Choose the number of panes for your kiosk layout.
+- For each pane select the source type:
+  - **Browser:** specify a name and URL.
+  - **Local application:** provide the executable path, optional arguments, and window matching rules:
+    - Window title regular expression
+    - Window class regular expression
+    - Child window class regular expression
+    - Optional follow-child-process and global fallback modes
+- Enable **Overwrite config** if you want to persist the result to `config.json`.
+- The wizard honours the app’s light/dark theme.
 
 ---
 
-## Configuration
+## Configuration reference
 
-Location: **`kiosk_app/modules/config.json`** in a source checkout or `config.json` next to the packaged EXE.
+The active configuration is stored at **`kiosk_app/modules/config.json`** in a source checkout or alongside the packaged
+executable.
 
-Example:
+Example configuration snippet:
 
 ```json
 {
@@ -145,59 +178,54 @@ Example:
 }
 ```
 
-### Backup & Restore
+### Backup & restore
 
-* Open **Settings** in the main window and click **Backup config** to export the active configuration as a JSON file (default name `config.json`).
-* Click **Restore config** to import a previously saved snapshot. The dialog validates the file, applies the configuration immediately, and rolls back to the previous settings if validation or saving fails.
+Use **Settings → Backup config** to export the active configuration to a JSON file (default file name `config.json`).
+Use **Settings → Restore config** to import a previously saved snapshot. The dialog validates the file, applies it immediately,
+and rolls back automatically if validation or saving fails.
 
----
+### Embedding local applications
 
-## Embedding local apps (tips)
+- Works reliably with classic Win32 desktop applications. UWP/Store apps and applications with custom compositors may not allow
+  parenting.
+- If an app does not embed immediately:
+  1. Launch it through MultiScreenKiosk to track its process ID.
+  2. Use **Settings → Window Spy** to inspect the window title and class names.
+  3. Update the `window_title_pattern`, `window_class_pattern`, or `child_window_class_pattern` fields accordingly.
+- Some applications resist resizing. MultiScreenKiosk applies move/resize retries with `SWP_NOSENDCHANGING`, optional child
+  targeting, and DPI-aware sizing. Running the kiosk without administrative rights cannot re-parent elevated applications.
 
-* Works for classic Win32 desktop apps. UWP/Store apps and apps with custom compositors may refuse parenting.
-* If the app does not embed immediately:
+Example patterns:
 
-  1. Start it via this kiosk to track its **PID**.
-  2. Use **Settings → Window Spy** to inspect title/class names.
-  3. Fill **window\_title\_pattern** / **window\_class\_pattern** / **child\_window\_class\_pattern** in the config.
-* Some apps resist resizing. The kiosk applies:
-
-  * **Move/resize retries** with `SWP_NOSENDCHANGING`
-  * Optional **child targeting** for rendering controls
-  * DPI-aware sizing
-* Running the kiosk **without admin** cannot re-parent **elevated** apps.
-
-Examples:
-
-* **Notepad**: title `.*(Notepad|Editor).*`, child class `Edit`
-* **Excel**: class `XLMAIN`
+- **Notepad:** title `.*(Notepad|Editor).*`, child class `Edit`
+- **Excel:** class `XLMAIN`
 
 ---
 
-## Shortcuts
+## Keyboard shortcuts
 
 Default mappings (customizable in Settings):
 
-* **Ctrl+1…4**: activate pane
-* **Ctrl+Q**: switch Single ↔ Quad
-* **Ctrl+← / Ctrl+→**: page previous/next (when more than 4 sources)
-* **F11**: toggle kiosk fullscreen
-* **Shift + Close**: allow close while in kiosk
+- **Ctrl+1 … Ctrl+4** – activate pane
+- **Ctrl+Q** – toggle between single and quad layouts
+- **Ctrl+← / Ctrl+→** – switch pages when more than four sources exist
+- **F11** – toggle kiosk fullscreen
+- **Shift + Close** – allow closing while in kiosk mode
 
 ---
 
 ## Logging
 
-* Files under `%LOCALAPPDATA%\MultiScreenKiosk\logs`
-* **Per launch** file name: `YYYYMMDD_N_Logfile.log` (N = 1, 2, 3 … on that day)
-* Open **Settings → Logs** to view (filter + clear)
-* **Log Statistics** shows level counts and **live file size** (updates every second)
+- Logs are stored under `%LOCALAPPDATA%\MultiScreenKiosk\logs`.
+- Each launch creates a file named `YYYYMMDD_N_Logfile.log` (where `N` increments per launch per day).
+- Open **Settings → Logs** to view logs, filter entries, or clear the file.
+- The **Log Statistics** window displays INFO/WARN/ERROR counters and live file size updates.
 
 ---
 
-## Building a single .exe (Windows)
+## Building a distributable
 
-Use **PyInstaller**:
+Create a standalone Windows executable with **PyInstaller**:
 
 ```powershell
 py -m pip install pyinstaller
@@ -212,30 +240,21 @@ py -m PyInstaller ^
   kiosk_app\modules\main.py
 ```
 
-The first `--add-data` line drops the repository’s default `config.json` next to the EXE; the second bundles the splash screen assets so the JSON/GIF animation works in frozen builds.
+The first `--add-data` statement copies the default `config.json` next to the executable; the second bundles the splash-screen
+assets so the JSON and GIF animation work in frozen builds.
 
-If WebEngine resources are not found at runtime, switch to a **one-folder** build and include Qt resources:
+If Qt WebEngine resources are missing at runtime, switch to a **one-folder** build (remove `--onefile`) and include the same data
+paths.
 
-```powershell
-py -m PyInstaller ^
-  --name MultiScreenKiosk ^
-  --noconsole ^
-  --clean ^
-  --add-data "kiosk_app\modules\config.json;config.json" ^
-  --add-data "kiosk_app\modules\assets;modules\assets" ^
-  --collect-all PySide6 ^
-  kiosk_app\modules\main.py
-```
-
-Place the resulting `MultiScreenKiosk.exe` in a folder and test starting with `--setup` once.
+Place the resulting `MultiScreenKiosk.exe` in a folder and start it once with `--setup` to generate a configuration.
 
 ---
 
-## Autostart (optional)
+## Autostarting on Windows
 
 Create a shortcut to `MultiScreenKiosk.exe` and place it in:
 
-```
+```text
 %APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup
 ```
 
@@ -243,19 +262,19 @@ Create a shortcut to `MultiScreenKiosk.exe` and place it in:
 
 ## Troubleshooting
 
-* **WebEngine fails to load** → ensure `PySide6-Addons` is installed.
-* **App doesn’t embed** → run **Window Spy** and refine regex patterns; check app elevation and UWP limitations.
-* **Sidebar overlays** → disable hamburger in Settings or use top orientation.
-* **Nothing after setup** → check that your active `config.json` (the default file ships with the repo) contains a non-empty `sources` array.
+- **WebEngine fails to load** – ensure `PySide6-Addons` is installed with WebEngine components.
+- **Application does not embed** – run Window Spy and refine regex patterns; confirm the app is not elevated or UWP-only.
+- **Sidebar overlaps content** – disable the hamburger menu in Settings or switch the navigation to the top.
+- **Blank screen after setup** – verify that your active `config.json` contains at least one source definition.
 
 ---
 
-## Roadmap (short)
+## Roadmap
 
-* Encrypted secrets in `config.json`
-* Profiles per monitor / multi-screen layouts
-* Health dashboard and remote config update
-* Crash-safe local app embedding presets for more apps
+- Encrypted secrets in `config.json`
+- Profiles per monitor and multi-screen layouts
+- Health dashboard plus remote configuration updates
+- Hardened presets for local app embedding
 
 ---
 
@@ -267,4 +286,5 @@ MIT
 
 ## Credits
 
-Built with **PySide6** and **Qt WebEngine**. Uses Win32 APIs (`SetParent`, `SetWindowPos`, etc.) for native window embedding.
+Built with **PySide6** and **Qt WebEngine**. Uses Win32 APIs (`SetParent`, `SetWindowPos`, and related calls) for native window
+embedding.
