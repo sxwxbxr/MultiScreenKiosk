@@ -12,10 +12,14 @@ from PySide6.QtWidgets import (
 )
 
 
+from modules.utils.i18n import tr, i18n
+
+
 # ---------- Hilfs Widgets ----------
 
 class _SourceRow(QWidget):
     """Dynamische Zeile fuer eine Quelle."""
+
     def __init__(self, idx: int, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.idx = idx
@@ -25,97 +29,141 @@ class _SourceRow(QWidget):
         grid.setHorizontalSpacing(8)
         grid.setVerticalSpacing(4)
 
-        # Name
-        grid.addWidget(QLabel("Name"), 0, 0)
+        row = 0
+        self.lbl_name = QLabel("", self)
+        grid.addWidget(self.lbl_name, row, 0)
         self.name_edit = QLineEdit(self)
-        self.name_edit.setPlaceholderText(f"Quelle {idx+1}")
-        grid.addWidget(self.name_edit, 0, 1, 1, 3)
+        self.name_edit.setPlaceholderText("")
+        grid.addWidget(self.name_edit, row, 1, 1, 3)
+        row += 1
 
-        # Typ
-        grid.addWidget(QLabel("Typ"), 1, 0)
+        self.lbl_type = QLabel("", self)
+        grid.addWidget(self.lbl_type, row, 0)
         self.type_combo = QComboBox(self)
-        self.type_combo.addItems(["browser", "local"])
-        self.type_combo.currentTextChanged.connect(self._on_type_change)
-        grid.addWidget(self.type_combo, 1, 1)
+        self.type_combo.addItem("", "browser")
+        self.type_combo.addItem("", "local")
+        self.type_combo.currentIndexChanged.connect(lambda _i: self._on_type_change())
+        grid.addWidget(self.type_combo, row, 1)
+        row += 1
 
-        # Browser Felder
+        self.lbl_url = QLabel("", self)
+        grid.addWidget(self.lbl_url, row, 0)
         self.url_edit = QLineEdit(self)
         self.url_edit.setPlaceholderText("https://example.com")
-        grid.addWidget(QLabel("URL"), 2, 0)
-        grid.addWidget(self.url_edit, 2, 1, 1, 3)
+        grid.addWidget(self.url_edit, row, 1, 1, 3)
+        row += 1
 
-        # Lokale App Felder
+        self.lbl_exe = QLabel("", self)
+        grid.addWidget(self.lbl_exe, row, 0)
         self.exe_edit = QLineEdit(self)
-        self.exe_edit.setPlaceholderText("Pfad zur EXE")
-        self.exe_btn = QPushButton("Waehlen", self)
-        self.exe_btn.clicked.connect(self._browse_exe)
-
-        self.args_edit = QLineEdit(self)
-        self.args_edit.setPlaceholderText("Optionale Argumente zB /safe oder -n 1")
-
-        self.title_edit = QLineEdit(self)
-        self.title_edit.setPlaceholderText("Titel Regex zB .*Notepad.*")
-
-        self.class_edit = QLineEdit(self)
-        self.class_edit.setPlaceholderText("Klasse Regex zB XLMAIN")
-
-        self.child_class_edit = QLineEdit(self)
-        self.child_class_edit.setPlaceholderText("Child Klasse Regex zB Edit")
-
-        self.allow_global_cb = QCheckBox("Globalen Fallback erlauben", self)
-        self.follow_children_cb = QCheckBox("Kindprozessen folgen", self)
-        self.follow_children_cb.setChecked(True)
-
-        row = 3
-        grid.addWidget(QLabel("EXE"), row, 0)
+        self.exe_edit.setPlaceholderText("")
         grid.addWidget(self.exe_edit, row, 1, 1, 2)
+        self.exe_btn = QPushButton("", self)
+        self.exe_btn.clicked.connect(self._browse_exe)
         grid.addWidget(self.exe_btn, row, 3)
         row += 1
 
-        grid.addWidget(QLabel("Argumente"), row, 0)
+        self.lbl_args = QLabel("", self)
+        grid.addWidget(self.lbl_args, row, 0)
+        self.args_edit = QLineEdit(self)
+        self.args_edit.setPlaceholderText("")
         grid.addWidget(self.args_edit, row, 1, 1, 3)
         row += 1
 
-        grid.addWidget(QLabel("Titel Regex"), row, 0)
+        self.lbl_title = QLabel("", self)
+        grid.addWidget(self.lbl_title, row, 0)
+        self.title_edit = QLineEdit(self)
+        self.title_edit.setPlaceholderText("")
         grid.addWidget(self.title_edit, row, 1, 1, 3)
         row += 1
 
-        grid.addWidget(QLabel("Klasse Regex"), row, 0)
+        self.lbl_class = QLabel("", self)
+        grid.addWidget(self.lbl_class, row, 0)
+        self.class_edit = QLineEdit(self)
+        self.class_edit.setPlaceholderText("")
         grid.addWidget(self.class_edit, row, 1, 1, 3)
         row += 1
 
-        grid.addWidget(QLabel("Child Klasse Regex"), row, 0)
+        self.lbl_child_class = QLabel("", self)
+        grid.addWidget(self.lbl_child_class, row, 0)
+        self.child_class_edit = QLineEdit(self)
+        self.child_class_edit.setPlaceholderText("")
         grid.addWidget(self.child_class_edit, row, 1, 1, 3)
         row += 1
 
+        self.follow_children_cb = QCheckBox("", self)
+        self.follow_children_cb.setChecked(True)
         grid.addWidget(self.follow_children_cb, row, 1)
+        self.allow_global_cb = QCheckBox("", self)
         grid.addWidget(self.allow_global_cb, row, 2)
 
-        self._on_type_change(self.type_combo.currentText())
+        i18n.language_changed.connect(self._on_language_changed)
+        self._apply_translations()
+        self._on_type_change()
 
-    def _on_type_change(self, typ: str):
+    def _on_language_changed(self, _lang: str) -> None:
+        self._apply_translations()
+
+    def _apply_translations(self):
+        self.lbl_name.setText(tr("Name"))
+        self.name_edit.setPlaceholderText(tr("Source {index}", index=self.idx + 1))
+        self.lbl_type.setText(tr("Type"))
+        self.type_combo.setItemText(0, tr("browser"))
+        self.type_combo.setItemText(1, tr("local"))
+        self.lbl_url.setText(tr("URL"))
+        self.lbl_exe.setText(tr("Path to EXE"))
+        self.exe_edit.setPlaceholderText(tr("Path to EXE"))
+        self.exe_btn.setText(tr("Browse"))
+        self.lbl_args.setText(tr("Arguments"))
+        self.args_edit.setPlaceholderText(tr("Arguments"))
+        self.lbl_title.setText(tr("Title regex"))
+        self.title_edit.setPlaceholderText(tr("Title regex"))
+        self.lbl_class.setText(tr("Class regex"))
+        self.class_edit.setPlaceholderText(tr("Class regex"))
+        self.lbl_child_class.setText(tr("Child class regex"))
+        self.child_class_edit.setPlaceholderText(tr("Child class regex"))
+        self.follow_children_cb.setText(tr("Follow child processes"))
+        self.allow_global_cb.setText(tr("Allow global fallback"))
+
+    def _on_type_change(self):
+        typ = (self.type_combo.currentData() or "browser").lower()
         is_browser = typ == "browser"
-        # Browser Felder
-        self.url_edit.setEnabled(is_browser)
-        self.url_edit.setVisible(is_browser)
-        # Lokale Felder
-        for w in [
-            self.exe_edit, self.exe_btn, self.args_edit,
-            self.title_edit, self.class_edit, self.child_class_edit,
-            self.allow_global_cb, self.follow_children_cb
-        ]:
-            w.setEnabled(not is_browser)
+        for w in (self.lbl_url, self.url_edit):
+            w.setVisible(is_browser)
+            w.setEnabled(is_browser)
+        local_widgets = [
+            self.lbl_exe,
+            self.exe_edit,
+            self.exe_btn,
+            self.lbl_args,
+            self.args_edit,
+            self.lbl_title,
+            self.title_edit,
+            self.lbl_class,
+            self.class_edit,
+            self.lbl_child_class,
+            self.child_class_edit,
+            self.allow_global_cb,
+            self.follow_children_cb,
+        ]
+        for w in local_widgets:
             w.setVisible(not is_browser)
+            w.setEnabled(not is_browser)
 
     def _browse_exe(self):
-        path, _ = QFileDialog.getOpenFileName(self, "EXE auswaehlen", "", "Programme (*.exe);;Alle Dateien (*)")
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            tr("Select executable"),
+            "",
+            tr("Programs (*.exe);;All files (*)"),
+        )
         if path:
             self.exe_edit.setText(path)
 
     def to_spec_dict(self) -> Dict[str, Any] | None:
         """Extrahiert die Zeile als SourceSpec dict oder None wenn unvollstaendig."""
-        typ = self.type_combo.currentText().strip().lower()
-        name = self.name_edit.text().strip() or f"Quelle {self.idx+1}"
+        typ = (self.type_combo.currentData() or "browser").strip().lower()
+        name = self.name_edit.text().strip() or tr("Source {index}", index=self.idx + 1)
 
         if typ == "browser":
             url = self.url_edit.text().strip()
@@ -124,7 +172,7 @@ class _SourceRow(QWidget):
             return {
                 "type": "browser",
                 "name": name,
-                "url": url
+                "url": url,
             }
 
         exe = self.exe_edit.text().strip()
@@ -146,7 +194,7 @@ class _SourceRow(QWidget):
             "window_class_pattern": klass or None,
             "child_window_class_pattern": child_class or None,
             "follow_children": follow_children,
-            "allow_global_fallback": allow_global
+            "allow_global_fallback": allow_global,
         }
 
 
@@ -160,7 +208,7 @@ class SetupDialog(QDialog):
     """
     def __init__(self, cfg, parent: Optional[QWidget] = None):
         super().__init__(parent)
-        self.setWindowTitle("Ersteinrichtung")
+        self.setWindowTitle(tr("Initial setup"))
         self.setModal(True)
         self.setMinimumSize(760, 560)
 
@@ -175,7 +223,8 @@ class SetupDialog(QDialog):
         header = QWidget(self)
         hl = QHBoxLayout(header)
         hl.setContentsMargins(12, 12, 12, 6)
-        hl.addWidget(QLabel("Anzahl Fenster"))
+        self.lbl_count = QLabel("", self)
+        hl.addWidget(self.lbl_count)
         self.count_spin = QSpinBox(self)
         self.count_spin.setRange(1, 20)
         initial_count = 4
@@ -187,7 +236,7 @@ class SetupDialog(QDialog):
         self.count_spin.valueChanged.connect(self._rebuild_rows)
         hl.addWidget(self.count_spin)
 
-        self.split_cb = QCheckBox("Splitscreen aktiv", self)
+        self.split_cb = QCheckBox("", self)
         self.split_cb.setChecked(True)
         hl.addWidget(self.split_cb)
         hl.addStretch(1)
@@ -206,11 +255,11 @@ class SetupDialog(QDialog):
         fl = QHBoxLayout(footer)
         fl.setContentsMargins(12, 6, 12, 12)
 
-        self.overwrite_cb = QCheckBox("Config ueberschreiben", self)
+        self.overwrite_cb = QCheckBox("", self)
         self.overwrite_cb.setChecked(True)
 
-        self.cancel_btn = QPushButton("Abbrechen", self)
-        self.save_btn = QPushButton("Speichern", self)
+        self.cancel_btn = QPushButton("", self)
+        self.save_btn = QPushButton("", self)
 
         fl.addWidget(self.overwrite_cb)
         fl.addStretch(1)
@@ -235,7 +284,29 @@ class SetupDialog(QDialog):
 
         self._result: Dict[str, Any] = {}
 
+        i18n.language_changed.connect(self._on_language_changed)
+        self._apply_translations()
+
     # -------- Theme --------
+
+    def _on_language_changed(self, _lang: str) -> None:
+        self._apply_translations()
+
+    def _apply_translations(self):
+        self.setWindowTitle(tr("Initial setup"))
+        if hasattr(self, "lbl_count"):
+            self.lbl_count.setText(tr("Number of windows"))
+        if hasattr(self, "split_cb"):
+            self.split_cb.setText(tr("Split screen active"))
+        if hasattr(self, "overwrite_cb"):
+            self.overwrite_cb.setText(tr("Overwrite config"))
+        if hasattr(self, "cancel_btn"):
+            self.cancel_btn.setText(tr("Cancel"))
+        if hasattr(self, "save_btn"):
+            self.save_btn.setText(tr("Save"))
+        for row in self._rows:
+            row._apply_translations()
+
 
     def _extract_theme_from_cfg(self, cfg) -> str:
         """Liest 'light' oder 'dark' robust aus cfg."""
@@ -280,9 +351,12 @@ class SetupDialog(QDialog):
     # -------- Layout Zeilen --------
 
     def _clear_rows(self):
-        for r in self._rows:
-            r.setParent(None)
-            r.deleteLater()
+        while self.rows_layout.count():
+            item = self.rows_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+                widget.deleteLater()
         self._rows.clear()
 
     def _rebuild_rows(self, n: int):
@@ -292,6 +366,7 @@ class SetupDialog(QDialog):
             self._rows.append(row)
             self.rows_layout.addWidget(row)
         self.rows_layout.addStretch(1)
+        self._apply_translations()
 
     def _prefill_from_cfg(self, cfg):
         try:
@@ -317,14 +392,15 @@ class SetupDialog(QDialog):
             if self._rows:
                 # erste drei Browser
                 for i in range(min(3, len(self._rows))):
-                    self._rows[i].type_combo.setCurrentText("browser")
-                    self._rows[i].name_edit.setText(f"Browser {i+1}")
-                    self._rows[i].url_edit.setText("https://www.google.com")
+                    row = self._rows[i]
+                    row.type_combo.setCurrentIndex(0)
+                    row.name_edit.setText(tr("Browser {index}", index=i + 1))
+                    row.url_edit.setText("https://www.google.com")
                 # ein lokaler Editor
                 if len(self._rows) >= 4:
                     r = self._rows[3]
-                    r.type_combo.setCurrentText("local")
-                    r.name_edit.setText("Editor")
+                    r.type_combo.setCurrentIndex(1)
+                    r.name_edit.setText(tr("Editor"))
                     r.exe_edit.setText("C:\\Windows\\System32\\notepad.exe")
                     r.title_edit.setText(".*(Notepad|Editor).*")
                     r.child_class_edit.setText("Edit")
@@ -336,15 +412,15 @@ class SetupDialog(QDialog):
                 s = sources[i]
                 # s kann ein Objekt oder Dict sein
                 s_type = getattr(s, "type", None) or s.get("type", "browser")
-                s_name = getattr(s, "name", None) or s.get("name", f"Quelle {i+1}")
+                s_name = getattr(s, "name", None) or s.get("name", None) or tr("Source {index}", index=i + 1)
                 r = self._rows[i]
-                r.name_edit.setText(s_name)
+                r.name_edit.setText(str(s_name))
                 if s_type == "browser":
-                    r.type_combo.setCurrentText("browser")
+                    r.type_combo.setCurrentIndex(0)
                     url = getattr(s, "url", None) or s.get("url", "")
                     r.url_edit.setText(url)
                 else:
-                    r.type_combo.setCurrentText("local")
+                    r.type_combo.setCurrentIndex(1)
                     r.exe_edit.setText(getattr(s, "launch_cmd", None) or s.get("launch_cmd", ""))
                     r.args_edit.setText(getattr(s, "args", None) or s.get("args", ""))
                     r.title_edit.setText(getattr(s, "window_title_pattern", None) or s.get("window_title_pattern", "") or "")
@@ -365,7 +441,7 @@ class SetupDialog(QDialog):
                 specs.append(spec)
 
         if not specs:
-            QMessageBox.warning(self, "Ungueltig", "Bitte mindestens eine gueltige Quelle angeben.")
+            QMessageBox.warning(self, tr("Invalid"), tr("Please provide at least one valid source."))
             return
 
         # Aktuelle UI und Kiosk Werte aus cfg lesen, robust gegen Dict oder Objekt

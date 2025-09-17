@@ -38,7 +38,7 @@ class BrowserHostWidget(QWidget):
         self.stack.addWidget(dummy)
         self.stack.setCurrentIndex(0 if self._placeholder_enabled else 1)
 
-        i18n.language_changed.connect(lambda _l: self._apply_translations())
+        i18n.language_changed.connect(self._on_language_changed)
         self._apply_translations()
 
     def set_view(self, view: QWebEngineView):
@@ -76,6 +76,9 @@ class BrowserHostWidget(QWidget):
                     self.placeholder.setText(tr("Loading..."))
             except Exception:
                 self.placeholder.setText(tr("Loading..."))
+
+    def _on_language_changed(self, _lang: str) -> None:
+        self._apply_translations()
 
     def _apply_translations(self):
         if not self.movie:

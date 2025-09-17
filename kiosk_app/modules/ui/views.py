@@ -12,9 +12,12 @@ class LoadingOverlay(QWidget):
         self.label = QLabel("", self)
         self.label.setStyleSheet("font-size:18px; background: rgba(0,0,0,0.4); color: white; padding:8px; border-radius:8px;")
         layout.addWidget(self.label)
-        i18n.language_changed.connect(lambda _l: self._apply_translations())
+        i18n.language_changed.connect(self._on_language_changed)
         self._apply_translations(text)
         self.hide()
+
+    def _on_language_changed(self, _lang: str) -> None:
+        self._apply_translations()
 
     def _apply_translations(self, explicit=None):
         self.label.setText(explicit if explicit is not None else tr("Loading..."))

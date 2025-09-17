@@ -5,7 +5,7 @@ import json
 import logging
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 log = logging.getLogger(__name__)
 
@@ -140,6 +140,15 @@ class LoggingSettings:
     rotate_backups: int = 5
     console: bool = True
     qt_messages: bool = True
+    mask_keys: Tuple[str, ...] = (
+        "password",
+        "token",
+        "authorization",
+        "auth",
+        "secret",
+    )
+    memory_buffer: int = 2000
+    enable_qt_bridge: bool = True
     remote_export: RemoteLogExportSettings = field(default_factory=RemoteLogExportSettings)
 
 
@@ -495,6 +504,13 @@ def _parse_remote_export(lg: Dict[str, Any]) -> RemoteLogExportSettings:
 
 def _parse_logging(data: Dict[str, Any]) -> LoggingSettings:
     lg = data.get("logging") or {}
+    defaults = LoggingSettings()
+    mask_raw = lg.get("mask_keys")
+    mask_keys = defaults.mask_keys
+    if mask_raw is not None:
+        parsed = tuple(item for item in _as_list(mask_raw) if item)
+        if parsed:
+            mask_keys = parsed
     return LoggingSettings(
         level=_safe_str(lg.get("level") or "INFO"),
         fmt=_safe_str(lg.get("fmt") or "plain"),
@@ -504,6 +520,9 @@ def _parse_logging(data: Dict[str, Any]) -> LoggingSettings:
         rotate_backups=_as_int(lg, "rotate_backups", 5),
         console=_as_bool(lg, "console", True),
         qt_messages=_as_bool(lg, "qt_messages", True),
+        mask_keys=mask_keys,
+        memory_buffer=_as_int(lg, "memory_buffer", defaults.memory_buffer),
+        enable_qt_bridge=_as_bool(lg, "enable_qt_bridge", defaults.enable_qt_bridge),
         remote_export=_parse_remote_export(lg),
     )
 
