@@ -4,18 +4,24 @@ from __future__ import annotations
 import sys
 import argparse
 import json
+import shutil
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from PySide6.QtWidgets import QApplication, QDialog
 
-from modules.utils.config_loader import load_config, save_config, Config, LoggingSettings
+from modules.utils.config_loader import (
+    load_config,
+    save_config,
+    Config,
+    LoggingSettings,
+    find_bundled_config,
+)
 from modules.utils.logger import init_logging, get_logger
 from modules.ui.app_state import AppState
 from modules.ui.main_window import MainWindow
 from modules.ui.setup_dialog import SetupDialog
 from modules.ui.splash_screen import SplashScreen
-from modules.utils.config_loader import Config
 from modules.utils.i18n import i18n, tr
 
 
@@ -59,6 +65,28 @@ def _resolve_assets_dir() -> Path:
             return candidate
 
     return candidates[0]
+
+
+def _seed_config_from_bundle(target: Path) -> tuple[bool, Optional[str]]:
+    """Copy the bundled default config next to the executable when missing."""
+
+    source = find_bundled_config()
+    if not source:
+        return False, None
+
+    try:
+        if source.resolve() == target.resolve():
+            return False, None
+    except Exception:
+        # Path may not resolve on some virtual filesystems; ignore and continue.
+        pass
+
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+        return True, None
+    except Exception as ex:  # pragma: no cover - filesystem specific
+        return False, f"{source}: {ex}"
 
 
 def _dict_to_config(d: Dict[str, Any]) -> Config:
@@ -127,7 +155,13 @@ def maybe_run_setup(app: QApplication, cfg: Config, cfg_path: Path, force: bool)
 def main() -> int:
     args = parse_args()
 
-    cfg_path = Path(args.config).resolve()
+    cfg_path = Path(args.config).expanduser().resolve()
+    first_run = not cfg_path.exists()
+    seeded_config = False
+    seed_error: Optional[str] = None
+    if first_run:
+        seeded_config, seed_error = _seed_config_from_bundle(cfg_path)
+
     cfg = load_config(cfg_path)
 
     logging_cfg = getattr(cfg, "logging", None)
@@ -149,10 +183,28 @@ def main() -> int:
     log = get_logger(__name__)
     log.info("app starting", extra={"source": "main"})
 
+    if first_run:
+        if seeded_config:
+            log.info(
+                "seeded default config to %s", cfg_path, extra={"source": "main"}
+            )
+        elif seed_error:
+            log.warning(
+                "could not seed bundled default config: %s",
+                seed_error,
+                extra={"source": "main"},
+            )
+        else:
+            log.info(
+                "no bundled default config found; using in-memory defaults",
+                extra={"source": "main"},
+            )
+
     app = QApplication(sys.argv)
 
     # Optionales Setup. Bei Abbruch sofort beenden.
-    cfg_after = maybe_run_setup(app, cfg, cfg_path, force=args.setup)
+    force_setup = bool(args.setup or first_run)
+    cfg_after = maybe_run_setup(app, cfg, cfg_path, force=force_setup)
     if cfg_after is None:
         app.quit()
         return 0

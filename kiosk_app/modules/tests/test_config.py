@@ -177,3 +177,27 @@ def test_schedule_parsing(tmp_path: Path):
     assert second.default_source is None
     assert len(second.blocks) == 1
     assert second.blocks[0].source == "A"
+
+
+def test_missing_config_uses_bundled_defaults(tmp_path: Path, monkeypatch):
+    bundled_payload = {
+        "sources": [
+            {"type": "browser", "name": "Example", "url": "https://example.com"}
+        ],
+        "ui": {"start_mode": "single"},
+        "kiosk": {"monitor_index": 2},
+    }
+    bundled_path = tmp_path / "bundled.json"
+    bundled_path.write_text(json.dumps(bundled_payload))
+
+    monkeypatch.setattr(
+        "utils.config_loader.find_bundled_config", lambda: bundled_path
+    )
+
+    target = tmp_path / "missing.json"
+    cfg = load_config(target)
+
+    assert cfg.sources and cfg.sources[0].name == "Example"
+    assert cfg.sources[0].url == "https://example.com"
+    assert cfg.ui.start_mode == "single"
+    assert cfg.kiosk.monitor_index == 2
