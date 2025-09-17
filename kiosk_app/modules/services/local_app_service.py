@@ -604,28 +604,30 @@ class LocalAppWidget(QWidget):
         except Exception:
             pass
 
-        self._embedded_hwnd = int(target)
-
-        container = None
-        foreign = None
-        try:
-            foreign = QWindow.fromWinId(int(target))
-            foreign.setFlags(Qt.FramelessWindowHint)
-            container = QWidget.createWindowContainer(foreign, parent=self)
-            container.setFocusPolicy(Qt.StrongFocus)
-            container.setAttribute(Qt.WA_NativeWindow, True)
-        except Exception as ex:
-            self.log.warning(f"Qt Container fehlgeschlagen: {ex}", extra={"source": "local"})
-            container = None
-
         def attach_ui():
             success = False
+            container = None
+            foreign = None
+            try:
+                foreign = QWindow.fromWinId(int(target))
+                foreign.setFlags(Qt.FramelessWindowHint)
+                container = QWidget.createWindowContainer(foreign, parent=self)
+                container.setFocusPolicy(Qt.StrongFocus)
+                container.setAttribute(Qt.WA_NativeWindow, True)
+            except Exception as ex:
+                self.log.warning(
+                    f"Qt Container fehlgeschlagen: {ex}",
+                    extra={"source": "local"},
+                )
+                container = None
+
             try:
                 self._fix_styles_for_child(int(target))
             except Exception:
                 pass
 
             if container is not None:
+                self._embedded_hwnd = int(target)
                 self._foreign_window = foreign
                 if self._container:
                     self._container.setParent(None)
@@ -637,13 +639,22 @@ class LocalAppWidget(QWidget):
                 success = True
             else:
                 success = self._native_reparent(int(target))
+
             try:
-                ShowWindow(HWND(self._embedded_hwnd), SW_SHOWNOACTIVATE)
+                if self._embedded_hwnd:
+                    ShowWindow(HWND(self._embedded_hwnd), SW_SHOWNOACTIVATE)
             except Exception:
                 pass
-            self.log.info("Fenster eingebettet", extra={"source": "local"})
+
             if success:
+                self.log.info("Fenster eingebettet", extra={"source": "local"})
                 self.ready.emit()
+            else:
+                self.log.warning(
+                    "Einbetten fehlgeschlagen; erneuter Versuch beim naechsten Heartbeat",
+                    extra={"source": "local"},
+                )
+                self._embedded_hwnd = None
 
         QTimer.singleShot(0, attach_ui)
 
