@@ -21,7 +21,7 @@ from modules.ui.browser_host import BrowserHostWidget
 from modules.ui.window_spy import WindowSpyDialog
 from modules.services.auto_update import AutoUpdateService, UpdateResult
 from modules.services.browser_services import BrowserService, make_webview
-from modules.services.local_app_service import LocalAppWidget
+from modules.services.local_app_service import LocalAppWidget, LocalAppSpec
 from modules.utils.config_loader import (
     Config,
     SourceSpec,
@@ -263,17 +263,30 @@ class MainWindow(QMainWindow):
                 svc.page_error.connect(lambda _msg, h=host: h.show_placeholder())
                 self.browser_services.append(svc)
             else:
-                # Lokale App Dummy Spec mit allen Feldern
-                dummy_spec = type("Tmp", (), {
-                    "launch_cmd": s.launch_cmd,
-                    "args": getattr(s, "args", "") or "",
-                    "embed_mode": "native_window",
-                    "window_title_pattern": s.window_title_pattern or ".*",
-                    "window_class_pattern": getattr(s, "window_class_pattern", "") or "",
-                    "follow_children": bool(getattr(s, "follow_children", True)),
-                    "web_url": None
-                })()
-                w = LocalAppWidget(dummy_spec)
+                # Lokale App inklusive aller Konfigurationsfelder abbilden
+                launch_cmd = str(getattr(s, "launch_cmd", "") or "").strip()
+                args = str(getattr(s, "args", "") or "").strip()
+
+                def _normalise_optional_str(value):
+                    if not value:
+                        return None
+                    text = str(value).strip()
+                    return text or None
+
+                spec = LocalAppSpec(
+                    launch_cmd=launch_cmd,
+                    args=args,
+                    embed_mode=str(getattr(s, "embed_mode", "native_window") or "native_window"),
+                    window_title_pattern=_normalise_optional_str(getattr(s, "window_title_pattern", None)) or ".*",
+                    window_class_pattern=_normalise_optional_str(getattr(s, "window_class_pattern", None)),
+                    child_window_class_pattern=_normalise_optional_str(getattr(s, "child_window_class_pattern", None)),
+                    child_window_title_pattern=_normalise_optional_str(getattr(s, "child_window_title_pattern", None)),
+                    follow_children=bool(getattr(s, "follow_children", True)),
+                    web_url=_normalise_optional_str(getattr(s, "web_url", None)),
+                    allow_global_fallback=bool(getattr(s, "allow_global_fallback", False)),
+                )
+
+                w = LocalAppWidget(spec)
                 self.source_widgets.append(w)
                 self.browser_services.append(None)
 
