@@ -262,10 +262,35 @@ Create a shortcut to `MultiScreenKiosk.exe` and place it in:
 
 ## Troubleshooting
 
+- **ImportError: DLL load failed while importing QtCore** – the Microsoft Visual C++ 2015-2022 redistributable (and optionally
+  Python if you plan to run from source) is missing on the target machine. Run
+  [`scripts/install_dependencies.ps1`](scripts/install_dependencies.ps1) once from an elevated PowerShell to install the
+  required runtimes.
 - **WebEngine fails to load** – ensure `PySide6-Addons` is installed with WebEngine components.
 - **Application does not embed** – run Window Spy and refine regex patterns; confirm the app is not elevated or UWP-only.
 - **Sidebar overlaps content** – disable the hamburger menu in Settings or switch the navigation to the top.
 - **Blank screen after setup** – verify that your active `config.json` contains at least one source definition.
+
+## Installing prerequisites on new machines
+
+When a computer has never run MultiScreenKiosk (or other Qt/Python software) before, install the dependencies with the provided
+PowerShell script:
+
+1. Open a PowerShell session **as Administrator** in the repository/extracted archive.
+2. Allow script execution for the current session if needed:
+
+   ```powershell
+   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+   ```
+
+3. Launch the installer:
+
+   ```powershell
+   .\scripts\install_dependencies.ps1
+   ```
+
+The script installs the Microsoft Visual C++ runtime, checks for an existing Python installation, optionally installs Python
+3.11 for you, and finally installs all Python packages listed in `kiosk_app/modules/requirements.txt`.
 
 ---
 
