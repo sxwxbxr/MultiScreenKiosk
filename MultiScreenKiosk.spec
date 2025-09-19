@@ -29,6 +29,12 @@ _msvc_dlls = [
 ]
 
 if sys.platform == "win32":
+    try:
+        from PyInstaller.utils.win32.winmanifest import find_msvcr
+    except Exception:
+        def find_msvcr():  # type: ignore
+            return []
+
     candidate_dirs = [
         Path(sys.prefix) / "DLLs",
         Path(sys.prefix),
@@ -36,32 +42,47 @@ if sys.platform == "win32":
         Path(sys.base_prefix),
     ]
 
-    system_root = os.environ.get("SystemRoot")
-    if system_root:
-        candidate_dirs.append(Path(system_root) / "System32")
+    system_root_env = os.environ.get("SystemRoot")
+    system_root = Path(system_root_env) if system_root_env else Path(r"C:\\Windows")
+    candidate_dirs.extend(
+        [
+            system_root / "System32",
+            system_root / "SysWOW64",
+        ]
+    )
 
     dll_roots = []
     seen = set()
     for directory in candidate_dirs:
         resolved = directory.resolve()
-        if resolved in seen:
+        normalized = str(resolved).lower()
+        if normalized in seen:
             continue
-        seen.add(resolved)
+        seen.add(normalized)
         dll_roots.append(resolved)
 
+    found_by_pyinstaller = {}
+    for resolved_path in find_msvcr() or []:
+        path_obj = Path(resolved_path)
+        found_by_pyinstaller[path_obj.name.lower()] = path_obj
+
     for dll_name in _msvc_dlls:
-        dll_path = None
-        for root in dll_roots:
-            candidate = root / dll_name
-            if candidate.exists():
-                dll_path = candidate
-                break
+        dll_path = found_by_pyinstaller.get(dll_name.lower())
+        if dll_path is None:
+            for root in dll_roots:
+                candidate = root / dll_name
+                if candidate.exists():
+                    dll_path = candidate
+                    break
         if dll_path is None:
             search_paths = ", ".join(str(p) for p in dll_roots)
             raise FileNotFoundError(
-                f"Unable to locate {dll_name} in runtime directories: {search_paths}"
+                f"Unable to locate {dll_name} via PyInstaller's find_msvcr() or in directories: {search_paths}"
             )
-        _binaries.append((str(dll_path), "."))
+
+        binary_entry = (str(dll_path), ".")
+        if binary_entry not in _binaries:
+            _binaries.append(binary_entry)
 else:
     print("MSVC runtime DLL bundling is skipped because the build host is not Windows.")
 
