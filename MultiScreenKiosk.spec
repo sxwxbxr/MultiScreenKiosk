@@ -35,18 +35,34 @@ if sys.platform == "win32":
         def find_msvcr():  # type: ignore
             return []
 
-    dll_roots = [
+    candidate_dirs = [
+        Path(sys.prefix) / "DLLs",
+        Path(sys.prefix),
+
         Path(sys.base_prefix) / "DLLs",
         Path(sys.base_prefix),
     ]
 
-    system_root = Path(os.environ.get("SystemRoot", r"C:\\Windows"))
-    dll_roots.extend(
+    system_root_env = os.environ.get("SystemRoot")
+    system_root = Path(system_root_env) if system_root_env else Path(r"C:\\Windows")
+    candidate_dirs.extend(
+
         [
             system_root / "System32",
             system_root / "SysWOW64",
         ]
     )
+
+
+    dll_roots = []
+    seen = set()
+    for directory in candidate_dirs:
+        resolved = directory.resolve()
+        normalized = str(resolved).lower()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        dll_roots.append(resolved)
 
     found_by_pyinstaller = {}
     for resolved_path in find_msvcr() or []:

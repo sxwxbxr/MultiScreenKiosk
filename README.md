@@ -232,16 +232,51 @@ py -m pip install pyinstaller
 py -m PyInstaller MultiScreenKiosk.spec
 ```
 
-`MultiScreenKiosk.spec` mirrors the command-line flags shown previously, bundles the default `config.json` and splash assets, c
-ollects all PySide6 resources, and copies the Microsoft Visual C++ runtime DLLs (`vcruntime140.dll`, `vcruntime140_1.dll`, `msvc
-p140.dll`) from your Python installation. Shipping these runtime files alongside the executable is required for the kiosk to sta
-rt on machines that do not already have the VC++ Redistributable installed.
+`MultiScreenKiosk.spec` mirrors the command-line flags shown previously, bundles the default `config.json` and splash assets, collects all PySide6 resources, and copies the Microsoft Visual C++ runtime DLLs (`vcruntime140.dll`, `vcruntime140_1.dll`, `msvcp140.dll`). Those DLLs normally live under `<python>\DLLs` inside your active environment or its base interpreter, and Windows keeps a copy in `%SystemRoot%\System32` once the VC++ redistributable is installed. The distributable must ship the runtime or the kiosk will fail to start on machines without the redistributable pre-installed.
 
-Prefer a one-off command instead of the spec? Make sure you append `--add-binary` entries for the runtime before pointing PyInst
-aller at `kiosk_app/modules/main.py`:
+Prefer a one-off command instead of the spec? Let Python calculate the absolute DLL paths (checking the current environment, the base interpreter, and `%SystemRoot%\System32`) before feeding them to `--add-binary` and pointing PyInstaller at `kiosk_app/modules/main.py`:
 
 ```powershell
-$pythonRoot = py -c "import sys; from pathlib import Path; print(Path(sys.base_prefix))"
+$dllPaths = @"
+import json
+import os
+import sys
+from pathlib import Path
+
+dlls = ["vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll"]
+candidate_dirs = [
+    Path(sys.prefix) / "DLLs",
+    Path(sys.prefix),
+    Path(sys.base_prefix) / "DLLs",
+    Path(sys.base_prefix),
+]
+
+system_root = os.environ.get("SystemRoot")
+if system_root:
+    candidate_dirs.append(Path(system_root) / "System32")
+
+search_dirs = []
+seen = set()
+for directory in candidate_dirs:
+    resolved = directory.resolve()
+    if resolved in seen:
+        continue
+    seen.add(resolved)
+    search_dirs.append(resolved)
+
+found = {}
+for name in dlls:
+    for directory in search_dirs:
+        candidate = directory / name
+        if candidate.exists():
+            found[name] = str(candidate)
+            break
+    else:
+        raise SystemExit(f"Unable to locate {name} in {[str(p) for p in search_dirs]}")
+
+print(json.dumps(found))
+"@ | py - | ConvertFrom-Json
+
 py -m PyInstaller ^
   --name MultiScreenKiosk ^
   --noconsole ^
@@ -250,9 +285,9 @@ py -m PyInstaller ^
   --add-data "kiosk_app\modules\config.json;config.json" ^
   --add-data "kiosk_app\modules\assets;modules\assets" ^
   --collect-all PySide6 ^
-  --add-binary "$pythonRoot\DLLs\vcruntime140.dll;." ^
-  --add-binary "$pythonRoot\DLLs\vcruntime140_1.dll;." ^
-  --add-binary "$pythonRoot\DLLs\msvcp140.dll;." ^
+  --add-binary "$($dllPaths.'vcruntime140.dll');." ^
+  --add-binary "$($dllPaths.'vcruntime140_1.dll');." ^
+  --add-binary "$($dllPaths.'msvcp140.dll');." ^
   kiosk_app\modules\main.py
 ```
 
