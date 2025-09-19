@@ -1,5 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
 import sys
 from pathlib import Path
 
@@ -28,10 +29,26 @@ _msvc_dlls = [
 ]
 
 if sys.platform == "win32":
-    dll_roots = [
+    candidate_dirs = [
+        Path(sys.prefix) / "DLLs",
+        Path(sys.prefix),
         Path(sys.base_prefix) / "DLLs",
         Path(sys.base_prefix),
     ]
+
+    system_root = os.environ.get("SystemRoot")
+    if system_root:
+        candidate_dirs.append(Path(system_root) / "System32")
+
+    dll_roots = []
+    seen = set()
+    for directory in candidate_dirs:
+        resolved = directory.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        dll_roots.append(resolved)
+
     for dll_name in _msvc_dlls:
         dll_path = None
         for root in dll_roots:
@@ -42,7 +59,7 @@ if sys.platform == "win32":
         if dll_path is None:
             search_paths = ", ".join(str(p) for p in dll_roots)
             raise FileNotFoundError(
-                f"Unable to locate {dll_name} in Python runtime directories: {search_paths}"
+                f"Unable to locate {dll_name} in runtime directories: {search_paths}"
             )
         _binaries.append((str(dll_path), "."))
 else:
