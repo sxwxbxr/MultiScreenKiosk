@@ -38,6 +38,7 @@ if sys.platform == "win32":
     candidate_dirs = [
         Path(sys.prefix) / "DLLs",
         Path(sys.prefix),
+
         Path(sys.base_prefix) / "DLLs",
         Path(sys.base_prefix),
     ]
@@ -45,11 +46,13 @@ if sys.platform == "win32":
     system_root_env = os.environ.get("SystemRoot")
     system_root = Path(system_root_env) if system_root_env else Path(r"C:\\Windows")
     candidate_dirs.extend(
+
         [
             system_root / "System32",
             system_root / "SysWOW64",
         ]
     )
+
 
     dll_roots = []
     seen = set()
@@ -79,7 +82,6 @@ if sys.platform == "win32":
             raise FileNotFoundError(
                 f"Unable to locate {dll_name} via PyInstaller's find_msvcr() or in directories: {search_paths}"
             )
-
         binary_entry = (str(dll_path), ".")
         if binary_entry not in _binaries:
             _binaries.append(binary_entry)
