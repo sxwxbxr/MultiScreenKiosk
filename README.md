@@ -225,10 +225,23 @@ Default mappings (customizable in Settings):
 
 ## Building a distributable
 
-Create a standalone Windows executable with **PyInstaller**:
+Create a standalone Windows executable with **PyInstaller** using the provided spec file:
 
 ```powershell
 py -m pip install pyinstaller
+py -m PyInstaller MultiScreenKiosk.spec
+```
+
+`MultiScreenKiosk.spec` mirrors the command-line flags shown previously, bundles the default `config.json` and splash assets, c
+ollects all PySide6 resources, and copies the Microsoft Visual C++ runtime DLLs (`vcruntime140.dll`, `vcruntime140_1.dll`, `msvc
+p140.dll`) from your Python installation. Shipping these runtime files alongside the executable is required for the kiosk to sta
+rt on machines that do not already have the VC++ Redistributable installed.
+
+Prefer a one-off command instead of the spec? Make sure you append `--add-binary` entries for the runtime before pointing PyInst
+aller at `kiosk_app/modules/main.py`:
+
+```powershell
+$pythonRoot = py -c "import sys; from pathlib import Path; print(Path(sys.base_prefix))"
 py -m PyInstaller ^
   --name MultiScreenKiosk ^
   --noconsole ^
@@ -237,14 +250,14 @@ py -m PyInstaller ^
   --add-data "kiosk_app\modules\config.json;config.json" ^
   --add-data "kiosk_app\modules\assets;modules\assets" ^
   --collect-all PySide6 ^
+  --add-binary "$pythonRoot\DLLs\vcruntime140.dll;." ^
+  --add-binary "$pythonRoot\DLLs\vcruntime140_1.dll;." ^
+  --add-binary "$pythonRoot\DLLs\msvcp140.dll;." ^
   kiosk_app\modules\main.py
 ```
 
-The first `--add-data` statement copies the default `config.json` next to the executable; the second bundles the splash-screen
-assets so the JSON and GIF animation work in frozen builds.
-
-If Qt WebEngine resources are missing at runtime, switch to a **one-folder** build (remove `--onefile`) and include the same data
-paths.
+If Qt WebEngine resources are missing at runtime, switch to a **one-folder** build (remove `--onefile`) and include the same dat
+a paths (plus the runtime DLLs) in the output directory.
 
 Place the resulting `MultiScreenKiosk.exe` in a folder and start it once with `--setup` to generate a configuration.
 

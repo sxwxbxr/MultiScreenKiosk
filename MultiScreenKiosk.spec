@@ -1,0 +1,86 @@
+# -*- mode: python ; coding: utf-8 -*-
+
+import sys
+from pathlib import Path
+
+from PyInstaller.utils.hooks import collect_all
+
+project_root = Path(__file__).resolve().parent
+modules_dir = project_root / "kiosk_app" / "modules"
+
+# Application data bundles
+_datas = [
+    (str(modules_dir / "config.json"), "config.json"),
+    (str(modules_dir / "assets"), "modules/assets"),
+]
+
+# Collect PySide6 resources (equivalent to --collect-all PySide6)
+_pyside6_datas, _pyside6_binaries, _pyside6_hiddenimports = collect_all("PySide6")
+_datas += _pyside6_datas
+_binaries = list(_pyside6_binaries)
+_hiddenimports = list(_pyside6_hiddenimports)
+
+# Bundle the MSVC runtime so the executable works on clean machines.
+_msvc_dlls = [
+    "vcruntime140.dll",
+    "vcruntime140_1.dll",
+    "msvcp140.dll",
+]
+
+if sys.platform == "win32":
+    dll_roots = [
+        Path(sys.base_prefix) / "DLLs",
+        Path(sys.base_prefix),
+    ]
+    for dll_name in _msvc_dlls:
+        dll_path = None
+        for root in dll_roots:
+            candidate = root / dll_name
+            if candidate.exists():
+                dll_path = candidate
+                break
+        if dll_path is None:
+            search_paths = ", ".join(str(p) for p in dll_roots)
+            raise FileNotFoundError(
+                f"Unable to locate {dll_name} in Python runtime directories: {search_paths}"
+            )
+        _binaries.append((str(dll_path), "."))
+else:
+    print("MSVC runtime DLL bundling is skipped because the build host is not Windows.")
+
+
+a = Analysis(
+    ['kiosk_app/modules/main.py'],
+    pathex=[str(modules_dir)],
+    binaries=_binaries,
+    datas=_datas,
+    hiddenimports=_hiddenimports,
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    noarchive=False,
+    optimize=0,
+)
+pyz = PYZ(a.pure)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.datas,
+    [],
+    name='MultiScreenKiosk',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=False,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)
