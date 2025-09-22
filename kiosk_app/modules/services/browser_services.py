@@ -3,8 +3,8 @@ import time
 import requests
 
 try:  # pragma: no cover - optional Qt dependency
-    from PySide6.QtCore import QTimer, QObject, Signal, QUrl  # type: ignore
-    from PySide6.QtWebEngineWidgets import QWebEngineView  # type: ignore
+    from PyQt5.QtCore import QTimer, QObject, pyqtSignal as Signal, QUrl  # type: ignore
+    from PyQt5.QtWebEngineWidgets import QWebEngineView  # type: ignore
     _QT_AVAILABLE = True
 except Exception:  # pragma: no cover - testing fallback
     _QT_AVAILABLE = False

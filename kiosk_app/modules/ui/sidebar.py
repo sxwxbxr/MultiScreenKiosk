@@ -1,8 +1,8 @@
 from typing import List, Optional
 
-from PySide6.QtCore import QSize, Qt, QRectF, Signal
-from PySide6.QtGui import QPixmap, QPainter, QTransform, QKeySequence
-from PySide6.QtWidgets import (
+from PyQt5.QtCore import QSize, Qt, QRectF, pyqtSignal as Signal
+from PyQt5.QtGui import QPixmap, QPainter, QTransform, QKeySequence
+from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QToolButton, QPushButton,
     QFrame, QSizePolicy, QMenu
 )
@@ -311,7 +311,7 @@ class Sidebar(QWidget):
             m.addSeparator()
             act_settings = m.addAction(tr("Settings"))
             act_settings.triggered.connect(self.request_settings.emit)
-            m.exec(self.mapToGlobal(self.btn_burger.geometry().bottomLeft()))
+            m.exec_(self.mapToGlobal(self.btn_burger.geometry().bottomLeft()))
 
     def set_collapsed(self, collapsed: bool):
         self._collapsed = collapsed

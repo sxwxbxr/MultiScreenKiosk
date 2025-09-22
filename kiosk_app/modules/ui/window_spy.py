@@ -3,8 +3,8 @@ from typing import Optional, List, Tuple, Set
 import ctypes
 from ctypes import wintypes
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QCheckBox,
     QTableWidget, QTableWidgetItem, QLabel, QMessageBox, QAbstractItemView, QWidget
 )

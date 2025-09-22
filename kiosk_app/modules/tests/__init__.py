@@ -10,10 +10,10 @@ import types
 
 
 def _install_qtcore_stub():
-    if "PySide6.QtCore" in sys.modules:
-        return sys.modules["PySide6.QtCore"]
+    if "PyQt5.QtCore" in sys.modules:
+        return sys.modules["PyQt5.QtCore"]
 
-    qtcore = types.ModuleType("PySide6.QtCore")
+    qtcore = types.ModuleType("PyQt5.QtCore")
 
     class _DummySignal:
         def __init__(self):
@@ -30,6 +30,9 @@ def _install_qtcore_stub():
                     pass
 
     def Signal(*_args, **_kwargs):  # type: ignore
+        return _DummySignal()
+
+    def pyqtSignal(*_args, **_kwargs):  # type: ignore
         return _DummySignal()
 
     class QObject:  # type: ignore
@@ -55,19 +58,20 @@ def _install_qtcore_stub():
             self._url = url
 
     qtcore.Signal = Signal
+    qtcore.pyqtSignal = pyqtSignal
     qtcore.QObject = QObject
     qtcore.QTimer = QTimer
     qtcore.QUrl = QUrl
-    qtcore.__package__ = "PySide6"
-    sys.modules["PySide6.QtCore"] = qtcore
+    qtcore.__package__ = "PyQt5"
+    sys.modules["PyQt5.QtCore"] = qtcore
     return qtcore
 
 
 def _install_qtwe_stub():
-    if "PySide6.QtWebEngineWidgets" in sys.modules:
-        return sys.modules["PySide6.QtWebEngineWidgets"]
+    if "PyQt5.QtWebEngineWidgets" in sys.modules:
+        return sys.modules["PyQt5.QtWebEngineWidgets"]
 
-    qtwe = types.ModuleType("PySide6.QtWebEngineWidgets")
+    qtwe = types.ModuleType("PyQt5.QtWebEngineWidgets")
 
     class QWebEngineView:  # type: ignore
         def __init__(self):
@@ -87,28 +91,28 @@ def _install_qtwe_stub():
             pass
 
     qtwe.QWebEngineView = QWebEngineView
-    qtwe.__package__ = "PySide6"
-    sys.modules["PySide6.QtWebEngineWidgets"] = qtwe
+    qtwe.__package__ = "PyQt5"
+    sys.modules["PyQt5.QtWebEngineWidgets"] = qtwe
     return qtwe
 
 
 try:
-    import PySide6  # type: ignore
+    import PyQt5  # type: ignore
 except Exception:  # pragma: no cover - provide stub for headless CI
-    stub_pkg = types.ModuleType("PySide6")
+    stub_pkg = types.ModuleType("PyQt5")
     stub_pkg.__path__ = []  # type: ignore[attr-defined]
     stub_pkg.__all__ = ["QtCore", "QtWebEngineWidgets"]
     qtcore = _install_qtcore_stub()
     qtwe = _install_qtwe_stub()
     stub_pkg.QtCore = qtcore
     stub_pkg.QtWebEngineWidgets = qtwe
-    sys.modules["PySide6"] = stub_pkg
+    sys.modules["PyQt5"] = stub_pkg
 else:  # pragma: no cover - augment incomplete Qt installs
     try:
-        from PySide6 import QtCore  # type: ignore
+        from PyQt5 import QtCore  # type: ignore
     except Exception:
-        PySide6.QtCore = _install_qtcore_stub()  # type: ignore[attr-defined]
+        PyQt5.QtCore = _install_qtcore_stub()  # type: ignore[attr-defined]
     try:
-        from PySide6 import QtWebEngineWidgets  # type: ignore
+        from PyQt5 import QtWebEngineWidgets  # type: ignore
     except Exception:
-        PySide6.QtWebEngineWidgets = _install_qtwe_stub()  # type: ignore[attr-defined]
+        PyQt5.QtWebEngineWidgets = _install_qtwe_stub()  # type: ignore[attr-defined]

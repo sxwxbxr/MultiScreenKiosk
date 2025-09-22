@@ -3,15 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QGuiApplication, QMovie
-from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QWidget
+from PyQt5.QtCore import Qt, QTimer, QUrl
+from PyQt5.QtGui import QGuiApplication, QMovie
+from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QWidget
 
 from modules.utils.i18n import tr
 from modules.utils.logger import get_logger
 
 try:  # pragma: no cover - optional dependency during tests
-    from PySide6.QtLottie import QLottieAnimation  # type: ignore
+    from PyQt5.QtLottie import QLottieAnimation  # type: ignore
     _HAS_QT_LOTTIE = True
 except Exception:  # pragma: no cover - optional dependency
     QLottieAnimation = None  # type: ignore[assignment]

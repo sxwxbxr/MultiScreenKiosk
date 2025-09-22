@@ -15,11 +15,21 @@ _datas = [
     (str(modules_dir / "assets"), "modules/assets"),
 ]
 
-# Collect PySide6 resources (equivalent to --collect-all PySide6)
-_pyside6_datas, _pyside6_binaries, _pyside6_hiddenimports = collect_all("PySide6")
-_datas += _pyside6_datas
-_binaries = list(_pyside6_binaries)
-_hiddenimports = list(_pyside6_hiddenimports)
+# Collect PyQt5 resources (equivalent to --collect-all PyQt5)
+_pyqt5_datas, _pyqt5_binaries, _pyqt5_hiddenimports = collect_all("PyQt5")
+_datas += _pyqt5_datas
+_binaries = list(_pyqt5_binaries)
+_hiddenimports = list(_pyqt5_hiddenimports)
+
+# Collect PyQtWebEngine resources to ensure QtWebEngine assets are bundled
+_pyqtwe_datas, _pyqtwe_binaries, _pyqtwe_hiddenimports = collect_all("PyQtWebEngine")
+_datas += _pyqtwe_datas
+for binary in _pyqtwe_binaries:
+    if binary not in _binaries:
+        _binaries.append(binary)
+for hidden in _pyqtwe_hiddenimports:
+    if hidden not in _hiddenimports:
+        _hiddenimports.append(hidden)
 
 # Bundle the MSVC runtime so the executable works on clean machines.
 _msvc_dlls = [

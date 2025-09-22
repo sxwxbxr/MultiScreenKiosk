@@ -13,9 +13,9 @@ from dataclasses import dataclass
 from threading import Thread, Event
 from typing import Optional, Set, Dict, List
 
-from PySide6.QtCore import Qt, QTimer, QSize, Signal
-from PySide6.QtGui import QWindow
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
+from PyQt5.QtCore import Qt, QTimer, QSize, pyqtSignal as Signal
+from PyQt5.QtGui import QWindow
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel
 
 from modules.utils.logger import get_logger
 
