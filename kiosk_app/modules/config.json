@@ -3,21 +3,35 @@
     {
       "type": "browser",
       "name": "WCU",
-      "url": "https://google.com"
+      "url": "https://google.com",
+      "launch_cmd": null,
+      "args": "",
+      "embed_mode": "native_window",
+      "window_title_pattern": null,
+      "window_class_pattern": null,
+      "child_window_class_pattern": null,
+      "child_window_title_pattern": null,
+      "follow_children": true,
+      "allow_global_fallback": false,
+      "web_url": null
     },
     {
       "type": "local",
       "name": "WCS",
+      "url": null,
       "launch_cmd": "D:/Telsonic/WCS/BIN200/Telsonic.TS.TFX.UI.App.exe",
       "args": "D:\\Telsonic\\WCS\\DATA200\\Config\\WCS.tfcon",
       "embed_mode": "native_window",
       "window_title_pattern": null,
       "window_class_pattern": null,
       "child_window_class_pattern": null,
+      "child_window_title_pattern": null,
       "follow_children": true,
-      "allow_global_fallback": false
+      "allow_global_fallback": false,
+      "web_url": null
     }
   ],
+  "schedules": [],
   "ui": {
     "start_mode": "quad",
     "split_enabled": true,
@@ -28,7 +42,18 @@
     "placeholder_enabled": true,
     "placeholder_gif_path": "",
     "theme": "light",
-    "logo_path": ""
+    "language": "en",
+    "logo_path": "",
+    "shortcuts": {
+      "select_1": "Ctrl+1",
+      "select_2": "Ctrl+2",
+      "select_3": "Ctrl+3",
+      "select_4": "Ctrl+4",
+      "next_page": "Ctrl+Right",
+      "prev_page": "Ctrl+Left",
+      "toggle_mode": "Ctrl+Q",
+      "toggle_kiosk": "F11"
+    }
   },
   "kiosk": {
     "monitor_index": 0,
@@ -65,5 +90,14 @@
       "schedule_minutes": null,
       "notify_failures": true
     }
+  },
+  "updates": {
+    "enabled": false,
+    "feed_url": "",
+    "channel": "stable",
+    "check_interval_hours": 6,
+    "verify_tls": true,
+    "download_dir": null,
+    "auto_install": true
   }
 }
