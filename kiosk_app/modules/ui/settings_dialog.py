@@ -30,6 +30,32 @@ except Exception:
 _log = get_logger(__name__)
 
 
+def _event_pos(event) -> QPoint:
+    """Return a QPoint from a mouse event for both Qt5 and Qt6."""
+
+    # PyQt6 introduced position()/globalPosition() returning QPointF. PyQt5
+    # still uses pos()/globalPos() which already return QPoint. Access the
+    # new API when available but gracefully fall back to the PyQt5 methods so
+    # the dialog keeps working after the downgrade.
+    if hasattr(event, "position"):
+        pos = event.position()
+        if hasattr(pos, "toPoint"):
+            return pos.toPoint()
+        return pos  # type: ignore[return-value]
+    return event.pos()
+
+
+def _event_global_pos(event) -> QPoint:
+    """Return a global QPoint from a mouse event for both Qt5 and Qt6."""
+
+    if hasattr(event, "globalPosition"):
+        gpos = event.globalPosition()
+        if hasattr(gpos, "toPoint"):
+            return gpos.toPoint()
+        return gpos  # type: ignore[return-value]
+    return event.globalPos()
+
+
 def _parse_time_string(value: str) -> Optional[QTime]:
     try:
         parts = value.split(":", 1)
@@ -1060,15 +1086,15 @@ class SettingsDialog(QDialog):
 
     # ------- Frameless Drag -------
     def mousePressEvent(self, e):
-        w = self.childAt(e.position().toPoint())
+        w = self.childAt(_event_pos(e))
         if e.button() == Qt.LeftButton and w and w.objectName() == "titlebar":
-            self._drag_pos = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            self._drag_pos = _event_global_pos(e) - self.frameGeometry().topLeft()
             e.accept()
         super().mousePressEvent(e)
 
     def mouseMoveEvent(self, e):
         if self._drag_pos is not None and e.buttons() & Qt.LeftButton:
-            self.move(e.globalPosition().toPoint() - self._drag_pos)
+            self.move(_event_global_pos(e) - self._drag_pos)
             e.accept()
         super().mouseMoveEvent(e)
 
