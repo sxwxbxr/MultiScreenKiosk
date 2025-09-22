@@ -9,31 +9,38 @@ if base_str not in sys.path:
 import types
 
 
+class _DummySignal:
+    def __init__(self):
+        self._handler = None
+
+    def connect(self, handler):
+        self._handler = handler
+
+    def emit(self, *args, **kwargs):
+        if self._handler:
+            try:
+                self._handler(*args, **kwargs)
+            except Exception:
+                pass
+
+
+def _dummy_signal_factory(*_args, **_kwargs):  # type: ignore
+    return _DummySignal()
+
+
+def _ensure_signal_aliases(module):
+    if not hasattr(module, "pyqtSignal"):
+        module.pyqtSignal = _dummy_signal_factory  # type: ignore[attr-defined]
+    if not hasattr(module, "Signal"):
+        module.Signal = _dummy_signal_factory  # type: ignore[attr-defined]
+    return module
+
+
 def _install_qtcore_stub():
     if "PyQt5.QtCore" in sys.modules:
-        return sys.modules["PyQt5.QtCore"]
+        return _ensure_signal_aliases(sys.modules["PyQt5.QtCore"])
 
     qtcore = types.ModuleType("PyQt5.QtCore")
-
-    class _DummySignal:
-        def __init__(self):
-            self._handler = None
-
-        def connect(self, handler):
-            self._handler = handler
-
-        def emit(self, *args, **kwargs):
-            if self._handler:
-                try:
-                    self._handler(*args, **kwargs)
-                except Exception:
-                    pass
-
-    def Signal(*_args, **_kwargs):  # type: ignore
-        return _DummySignal()
-
-    def pyqtSignal(*_args, **_kwargs):  # type: ignore
-        return _DummySignal()
 
     class QObject:  # type: ignore
         def __init__(self, *_args, **_kwargs):
@@ -41,7 +48,7 @@ def _install_qtcore_stub():
 
     class QTimer:  # type: ignore
         def __init__(self, *_args, **_kwargs):
-            self.timeout = Signal()
+            self.timeout = _dummy_signal_factory()
             self._interval = 0
 
         def setInterval(self, value):
@@ -57,12 +64,11 @@ def _install_qtcore_stub():
         def __init__(self, url: str):
             self._url = url
 
-    qtcore.Signal = Signal
-    qtcore.pyqtSignal = pyqtSignal
     qtcore.QObject = QObject
     qtcore.QTimer = QTimer
     qtcore.QUrl = QUrl
     qtcore.__package__ = "PyQt5"
+    _ensure_signal_aliases(qtcore)
     sys.modules["PyQt5.QtCore"] = qtcore
     return qtcore
 
@@ -76,8 +82,8 @@ def _install_qtwe_stub():
     class QWebEngineView:  # type: ignore
         def __init__(self):
             core = _install_qtcore_stub()
-            self.loadStarted = core.Signal()
-            self.loadFinished = core.Signal()
+            self.loadStarted = getattr(core, "Signal", _dummy_signal_factory)()
+            self.loadFinished = getattr(core, "Signal", _dummy_signal_factory)()
             self._zoom = 1.0
             self._url = None
 

@@ -318,6 +318,7 @@ Create a shortcut to `MultiScreenKiosk.exe` and place it in:
 - **Application does not embed** – run Window Spy and refine regex patterns; confirm the app is not elevated or UWP-only.
 - **Sidebar overlaps content** – disable the hamburger menu in Settings or switch the navigation to the top.
 - **Blank screen after setup** – verify that your active `config.json` contains at least one source definition.
+- **PyInstaller aborts because multiple Qt bindings are detected** – the kiosk uses PyQt5 exclusively. Remove any `--collect-all PySide6` flag (or uninstall PySide6 from the build environment) so that only the PyQt5 hooks run when freezing the app.
 
 ## Installing prerequisites on new machines
 
