@@ -9,8 +9,8 @@ import shutil
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import QApplication, QDialog
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtWidgets import QApplication, QDialog
 
 from modules.utils.config_loader import (
     load_config,
@@ -230,7 +230,7 @@ def maybe_run_setup(app: QApplication, cfg: Config, cfg_path: Path, force: bool)
 
     log = get_logger(__name__)
     dlg = SetupDialog(cfg)
-    res_code = dlg.exec()
+    res_code = dlg.exec_()
     if res_code != QDialog.Accepted:
         log.info("Setup abgebrochen. Anwendung wird beendet.", extra={"source": "setup"})
         return None
@@ -441,7 +441,7 @@ def main() -> int:
     except Exception:
         win.show()
 
-    result = app.exec()
+    result = app.exec_()
     if splash:
         splash.finish(win)
     return result

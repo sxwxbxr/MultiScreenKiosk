@@ -1,9 +1,9 @@
 from typing import Optional
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QMovie
-from PySide6.QtWidgets import QWidget, QStackedLayout, QLabel
-from PySide6.QtWebEngineWidgets import QWebEngineView
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QMovie
+from PyQt5.QtWidgets import QWidget, QStackedLayout, QLabel
+from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from modules.utils.i18n import tr, i18n
 

@@ -3,9 +3,9 @@ from __future__ import annotations
 from typing import Optional, Dict, Any, List, Callable, Set
 from copy import deepcopy
 from pathlib import Path
-from PySide6.QtCore import Qt, QPoint, Signal, QTime
-from PySide6.QtGui import QKeySequence
-from PySide6.QtWidgets import (
+from PyQt5.QtCore import Qt, QPoint, pyqtSignal as Signal, QTime
+from PyQt5.QtGui import QKeySequence
+from PyQt5.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QComboBox, QCheckBox, QLineEdit, QFileDialog, QMessageBox,
     QKeySequenceEdit, QMenu, QGridLayout, QSpinBox, QTableWidget,
@@ -870,11 +870,11 @@ class SettingsDialog(QDialog):
             actions[0].trigger()
             return
         pos = self.btn_config.mapToGlobal(self.btn_config.rect().bottomLeft())
-        self._config_menu.exec(pos)
+        self._config_menu.exec_(pos)
 
     def _open_remote_export_dialog(self):
         dlg = RemoteExportDialog(self._remote_export_settings, self)
-        if dlg.exec():
+        if dlg.exec_():
             result = dlg.result_settings()
             if result is not None:
                 self._remote_export_settings = deepcopy(result)
@@ -882,13 +882,13 @@ class SettingsDialog(QDialog):
 
     def _open_schedule_dialog(self) -> None:
         dlg = ScheduleEditorDialog(self._schedule_payload, self._source_names, self)
-        if dlg.exec():
+        if dlg.exec_():
             self._schedule_payload = dlg.result_schedule()
             self._update_schedule_summary()
 
     def _open_shortcut_dialog(self) -> None:
         dlg = ShortcutEditorDialog(self._shortcut_map, self)
-        if dlg.exec():
+        if dlg.exec_():
             self._shortcut_map = dlg.result_shortcuts()
             self._update_shortcut_summary()
 
@@ -1007,7 +1007,7 @@ class SettingsDialog(QDialog):
         m.setIcon(QMessageBox.Warning)
         m.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
         m.setDefaultButton(QMessageBox.No)
-        res = m.exec()
+        res = m.exec_()
 
         if res == QMessageBox.Yes:
             self._result = {

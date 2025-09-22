@@ -1,6 +1,6 @@
 # MultiScreenKiosk
 
-A production-ready fullscreen kiosk for Windows built with Qt / PySide6 and Qt WebEngine. MultiScreenKiosk lets you combine web
+A production-ready fullscreen kiosk for Windows built with Qt / PyQt5 and Qt WebEngine. MultiScreenKiosk lets you combine web
 content and native Windows applications in a polished kiosk experience that supports both single-view and 2×2 grid layouts.
 
 ---
@@ -62,7 +62,7 @@ Target operating system: **Windows 10 or newer**.
 
 ## Architecture at a glance
 
-- **UI (PySide6):** `MainWindow`, `Sidebar`, `SettingsDialog`, `SetupDialog`, `BrowserHostWidget`
+- **UI (PyQt5):** `MainWindow`, `Sidebar`, `SettingsDialog`, `SetupDialog`, `BrowserHostWidget`
 - **View model:** `AppState` (active index, mode switching)
 - **Services:** `BrowserService` (web views), `LocalAppService` (process spawning, embedding, and watchdog)
 - **Utilities:** configuration loader and asynchronous logger with a bridge to the UI
@@ -72,7 +72,7 @@ Target operating system: **Windows 10 or newer**.
 ## System requirements
 
 - Python **3.10 – 3.13** (64-bit)
-- PySide6 with WebEngine components
+- PyQt5 with the `PyQtWebEngine` package
 
 Install dependencies in a virtual environment:
 
@@ -82,7 +82,7 @@ python -m venv .venv
 py -m pip install -r kiosk_app/modules/requirements.txt
 ```
 
-> If WebEngine is missing, ensure `PySide6-Addons` is installed alongside `PySide6` and `PySide6-Essentials`.
+> If WebEngine is missing, ensure the `PyQtWebEngine` package is installed alongside `PyQt5`.
 
 ---
 
@@ -232,7 +232,7 @@ py -m pip install pyinstaller
 py -m PyInstaller MultiScreenKiosk.spec
 ```
 
-`MultiScreenKiosk.spec` mirrors the command-line flags shown previously, bundles the default `config.json` and splash assets, collects all PySide6 resources, and copies the Microsoft Visual C++ runtime DLLs (`vcruntime140.dll`, `vcruntime140_1.dll`, `msvcp140.dll`). Those DLLs normally live under `<python>\DLLs` inside your active environment or its base interpreter, and Windows keeps a copy in `%SystemRoot%\System32` once the VC++ redistributable is installed. The distributable must ship the runtime or the kiosk will fail to start on machines without the redistributable pre-installed.
+`MultiScreenKiosk.spec` mirrors the command-line flags shown previously, bundles the default `config.json` and splash assets, collects all PyQt5 resources, and copies the Microsoft Visual C++ runtime DLLs (`vcruntime140.dll`, `vcruntime140_1.dll`, `msvcp140.dll`). Those DLLs normally live under `<python>\DLLs` inside your active environment or its base interpreter, and Windows keeps a copy in `%SystemRoot%\System32` once the VC++ redistributable is installed. The distributable must ship the runtime or the kiosk will fail to start on machines without the redistributable pre-installed.
 
 Prefer a one-off command instead of the spec? Let Python calculate the absolute DLL paths (checking the current environment, the base interpreter, and `%SystemRoot%\System32`) before feeding them to `--add-binary` and pointing PyInstaller at `kiosk_app/modules/main.py`:
 
@@ -284,7 +284,7 @@ py -m PyInstaller ^
   --onefile ^
   --add-data "kiosk_app\modules\config.json;config.json" ^
   --add-data "kiosk_app\modules\assets;modules\assets" ^
-  --collect-all PySide6 ^
+  --collect-all PyQt5 ^
   --add-binary "$($dllPaths.'vcruntime140.dll');." ^
   --add-binary "$($dllPaths.'vcruntime140_1.dll');." ^
   --add-binary "$($dllPaths.'msvcp140.dll');." ^
@@ -314,7 +314,7 @@ Create a shortcut to `MultiScreenKiosk.exe` and place it in:
   Python if you plan to run from source) is missing on the target machine. Run
   [`scripts/install_dependencies.ps1`](scripts/install_dependencies.ps1) once from an elevated PowerShell to install the
   required runtimes.
-- **WebEngine fails to load** – ensure `PySide6-Addons` is installed with WebEngine components.
+- **WebEngine fails to load** – ensure the `PyQtWebEngine` package is installed with WebEngine components.
 - **Application does not embed** – run Window Spy and refine regex patterns; confirm the app is not elevated or UWP-only.
 - **Sidebar overlaps content** – disable the hamburger menu in Settings or switch the navigation to the top.
 - **Blank screen after setup** – verify that your active `config.json` contains at least one source definition.
@@ -359,5 +359,5 @@ MIT
 
 ## Credits
 
-Built with **PySide6** and **Qt WebEngine**. Uses Win32 APIs (`SetParent`, `SetWindowPos`, and related calls) for native window
+Built with **PyQt5** and **Qt WebEngine**. Uses Win32 APIs (`SetParent`, `SetWindowPos`, and related calls) for native window
 embedding.

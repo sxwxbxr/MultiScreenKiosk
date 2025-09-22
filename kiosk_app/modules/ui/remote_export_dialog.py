@@ -5,8 +5,8 @@ from copy import deepcopy
 import re
 from typing import Dict, List, Optional
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,

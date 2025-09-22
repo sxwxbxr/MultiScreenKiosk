@@ -7,9 +7,9 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from PySide6.QtCore import Qt, QTimer, Signal, Slot
-from PySide6.QtGui import QShortcut, QKeySequence
-from PySide6.QtWidgets import (
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal as Signal, pyqtSlot as Slot
+from PyQt5.QtGui import QShortcut, QKeySequence
+from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QStackedWidget,
     QGridLayout, QLabel, QApplication, QToolButton, QMenu, QMessageBox
 )
@@ -216,7 +216,7 @@ class MainWindow(QMainWindow):
         act_settings = m.addAction(tr("Settings"))
         act_settings.triggered.connect(self.open_settings)
         pos = self.overlay_burger.mapToGlobal(self.overlay_burger.rect().bottomLeft())
-        m.exec(pos)
+        m.exec_(pos)
 
     def _nudge_local_apps(self):
     # nur sichtbare Widgets der aktuellen Ansicht anstossen
@@ -622,7 +622,7 @@ class MainWindow(QMainWindow):
             restore_handler=self._restore_config,
             parent=self
         )
-        if dlg.exec():
+        if dlg.exec_():
             res = dlg.results()
 
             restored_cfg = res.get("restored_config")

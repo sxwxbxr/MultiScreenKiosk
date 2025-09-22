@@ -1,6 +1,6 @@
 from typing import List
-from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QRect
-from PySide6.QtWidgets import QWidget, QStackedWidget, QGridLayout, QVBoxLayout, QLabel, QSizePolicy
+from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QRect
+from PyQt5.QtWidgets import QWidget, QStackedWidget, QGridLayout, QVBoxLayout, QLabel, QSizePolicy
 from modules.utils.i18n import tr, i18n
 
 class LoadingOverlay(QWidget):

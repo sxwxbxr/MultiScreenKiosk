@@ -19,7 +19,7 @@ from modules.utils.remote_export import RemoteLogExporter, RemoteExportResult, R
 
 # Qt Bridge optional
 try:
-    from PySide6.QtCore import QObject, Signal, QCoreApplication  # type: ignore
+    from PyQt5.QtCore import QObject, pyqtSignal as Signal, QCoreApplication  # type: ignore
     _HAVE_QT = True
 except Exception:
     _HAVE_QT = False
@@ -379,7 +379,7 @@ def _install_qt_message_handler():
     if not _HAVE_QT:
         return
     try:
-        from PySide6.QtCore import qInstallMessageHandler  # type: ignore
+        from PyQt5.QtCore import qInstallMessageHandler  # type: ignore
     except Exception:
         return
 

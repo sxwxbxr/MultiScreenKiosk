@@ -4,9 +4,9 @@ from typing import Optional, List
 
 import os
 import re
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QTextCursor
-from PySide6.QtWidgets import (
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QTextCursor
+from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QLineEdit,
     QCheckBox, QPushButton, QTextEdit, QFileDialog, QMessageBox, QWidget
 )
