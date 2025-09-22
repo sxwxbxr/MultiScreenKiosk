@@ -8,10 +8,11 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal as Signal, pyqtSlot as Slot
-from PyQt5.QtGui import QShortcut, QKeySequence
+from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QStackedWidget,
-    QGridLayout, QLabel, QApplication, QToolButton, QMenu, QMessageBox
+    QGridLayout, QLabel, QApplication, QToolButton, QMenu, QMessageBox,
+    QShortcut,
 )
 
 from modules.ui.app_state import AppState, ViewMode
