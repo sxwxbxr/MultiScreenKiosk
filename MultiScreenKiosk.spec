@@ -15,19 +15,50 @@ _datas = [
     (str(modules_dir / "assets"), "modules/assets"),
 ]
 
-# Collect PyQt5 resources (equivalent to --collect-all PyQt5)
-_pyqt5_datas, _pyqt5_binaries, _pyqt5_hiddenimports = collect_all("PyQt5")
-_datas += _pyqt5_datas
-_binaries = list(_pyqt5_binaries)
-_hiddenimports = list(_pyqt5_hiddenimports)
+# Collect Qt 6 resources (prefer PySide6, fall back to PyQt6)
+_qt_binding_preference = []
+forced_binding = os.environ.get("MULTISCREENKIOSK_QT_API", "").strip().lower()
+if forced_binding == "pyqt6":
+    _qt_binding_preference = ["PyQt6", "PySide6"]
+elif forced_binding == "pyside6":
+    _qt_binding_preference = ["PySide6", "PyQt6"]
+else:
+    _qt_binding_preference = ["PySide6", "PyQt6"]
 
-# Collect PyQtWebEngine resources to ensure QtWebEngine assets are bundled
-_pyqtwe_datas, _pyqtwe_binaries, _pyqtwe_hiddenimports = collect_all("PyQtWebEngine")
-_datas += _pyqtwe_datas
-for binary in _pyqtwe_binaries:
+_binaries = []
+_hiddenimports = []
+_qt_binding_name = None
+_errors = []
+for candidate in _qt_binding_preference:
+    try:
+        _qt_datas, _qt_binaries, _qt_hiddenimports = collect_all(candidate)
+    except Exception as exc:
+        _errors.append(f"{candidate}: {exc}")
+        continue
+    _datas += _qt_datas
+    _binaries = list(_qt_binaries)
+    _hiddenimports = list(_qt_hiddenimports)
+    _qt_binding_name = candidate
+    break
+
+if _qt_binding_name is None:
+    details = ", ".join(_errors) or "no candidates"
+    raise ImportError(f"Unable to collect Qt 6 resources: {details}")
+
+# Collect QtWebEngine resources to ensure QtWebEngine assets are bundled
+_webengine_module = f"{_qt_binding_name}.QtWebEngineWidgets"
+try:
+    _we_datas, _we_binaries, _we_hiddenimports = collect_all(_webengine_module)
+except Exception:
+    _we_datas = []
+    _we_binaries = []
+    _we_hiddenimports = []
+
+_datas += _we_datas
+for binary in _we_binaries:
     if binary not in _binaries:
         _binaries.append(binary)
-for hidden in _pyqtwe_hiddenimports:
+for hidden in _we_hiddenimports:
     if hidden not in _hiddenimports:
         _hiddenimports.append(hidden)
 

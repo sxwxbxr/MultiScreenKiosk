@@ -4,12 +4,22 @@ from typing import List, Dict, Any, Optional
 import copy
 from dataclasses import asdict, is_dataclass
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import (
-    QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QComboBox, QCheckBox, QLineEdit, QFileDialog, QScrollArea, QMessageBox,
-    QSpinBox, QGridLayout
-)
+from modules.qt import Qt, QtWidgets
+
+QDialog = QtWidgets.QDialog
+QWidget = QtWidgets.QWidget
+QVBoxLayout = QtWidgets.QVBoxLayout
+QHBoxLayout = QtWidgets.QHBoxLayout
+QLabel = QtWidgets.QLabel
+QPushButton = QtWidgets.QPushButton
+QComboBox = QtWidgets.QComboBox
+QCheckBox = QtWidgets.QCheckBox
+QLineEdit = QtWidgets.QLineEdit
+QFileDialog = QtWidgets.QFileDialog
+QScrollArea = QtWidgets.QScrollArea
+QMessageBox = QtWidgets.QMessageBox
+QSpinBox = QtWidgets.QSpinBox
+QGridLayout = QtWidgets.QGridLayout
 
 
 from modules.utils.i18n import tr, i18n

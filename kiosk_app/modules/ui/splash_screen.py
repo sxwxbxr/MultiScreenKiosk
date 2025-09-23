@@ -3,19 +3,21 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from PyQt5.QtCore import Qt, QTimer, QUrl
-from PyQt5.QtGui import QGuiApplication, QMovie
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QWidget
+from modules.qt import Qt, QtCore, QtGui, QtWidgets, QLottieAnimation, HAVE_QT_LOTTIE
+
+QTimer = QtCore.QTimer
+QUrl = QtCore.QUrl
+QGuiApplication = QtGui.QGuiApplication
+QMovie = QtGui.QMovie
+QDialog = QtWidgets.QDialog
+QVBoxLayout = QtWidgets.QVBoxLayout
+QLabel = QtWidgets.QLabel
+QWidget = QtWidgets.QWidget
 
 from modules.utils.i18n import tr
 from modules.utils.logger import get_logger
 
-try:  # pragma: no cover - optional dependency during tests
-    from PyQt5.QtLottie import QLottieAnimation  # type: ignore
-    _HAS_QT_LOTTIE = True
-except Exception:  # pragma: no cover - optional dependency
-    QLottieAnimation = None  # type: ignore[assignment]
-    _HAS_QT_LOTTIE = False
+_HAS_QT_LOTTIE = HAVE_QT_LOTTIE
 
 
 class SplashScreen(QDialog):

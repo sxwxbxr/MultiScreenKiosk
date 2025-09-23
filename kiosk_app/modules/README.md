@@ -1,4 +1,4 @@
-# Kiosk Anwendung fuer Windows mit PyQt5
+# Kiosk Anwendung fuer Windows mit Qt 6 (PySide6/PyQt6)
 
 ## Features
 - Echter Vollbild Kiosk ohne Rahmen

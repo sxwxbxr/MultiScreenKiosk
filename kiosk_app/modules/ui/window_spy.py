@@ -3,11 +3,19 @@ from typing import Optional, List, Tuple, Set
 import ctypes
 from ctypes import wintypes
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QCheckBox,
-    QTableWidget, QTableWidgetItem, QLabel, QMessageBox, QAbstractItemView, QWidget
-)
+from modules.qt import Qt, QtWidgets
+
+QDialog = QtWidgets.QDialog
+QVBoxLayout = QtWidgets.QVBoxLayout
+QHBoxLayout = QtWidgets.QHBoxLayout
+QPushButton = QtWidgets.QPushButton
+QCheckBox = QtWidgets.QCheckBox
+QTableWidget = QtWidgets.QTableWidget
+QTableWidgetItem = QtWidgets.QTableWidgetItem
+QLabel = QtWidgets.QLabel
+QMessageBox = QtWidgets.QMessageBox
+QAbstractItemView = QtWidgets.QAbstractItemView
+QWidget = QtWidgets.QWidget
 
 from modules.services.local_app_service import (
     EnumWindowsProc, EnumWindows, GetWindowThreadProcessId, DWORD,

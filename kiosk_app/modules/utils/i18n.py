@@ -2,7 +2,9 @@ import json
 import locale
 from typing import Dict, Iterable, List, NamedTuple
 
-from PyQt5.QtCore import QObject, pyqtSignal as Signal
+from modules.qt import QtCore, Signal
+
+QObject = QtCore.QObject
 
 from modules.utils.resource_loader import get_resource_dir
 

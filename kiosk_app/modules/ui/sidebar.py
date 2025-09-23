@@ -1,11 +1,22 @@
 from typing import List, Optional
 
-from PyQt5.QtCore import QSize, Qt, QRectF, pyqtSignal as Signal
-from PyQt5.QtGui import QPixmap, QPainter, QTransform, QKeySequence
-from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QToolButton, QPushButton,
-    QFrame, QSizePolicy, QMenu
-)
+from modules.qt import Qt, QtCore, QtGui, QtWidgets, Signal
+
+QSize = QtCore.QSize
+QRectF = QtCore.QRectF
+QPixmap = QtGui.QPixmap
+QPainter = QtGui.QPainter
+QTransform = QtGui.QTransform
+QKeySequence = QtGui.QKeySequence
+QWidget = QtWidgets.QWidget
+QVBoxLayout = QtWidgets.QVBoxLayout
+QHBoxLayout = QtWidgets.QHBoxLayout
+QGridLayout = QtWidgets.QGridLayout
+QToolButton = QtWidgets.QToolButton
+QPushButton = QtWidgets.QPushButton
+QFrame = QtWidgets.QFrame
+QSizePolicy = QtWidgets.QSizePolicy
+QMenu = QtWidgets.QMenu
 
 from modules.utils.config_loader import DEFAULT_SHORTCUTS
 from modules.utils.i18n import tr, i18n
@@ -311,7 +322,7 @@ class Sidebar(QWidget):
             m.addSeparator()
             act_settings = m.addAction(tr("Settings"))
             act_settings.triggered.connect(self.request_settings.emit)
-            m.exec_(self.mapToGlobal(self.btn_burger.geometry().bottomLeft()))
+            m.exec(self.mapToGlobal(self.btn_burger.geometry().bottomLeft()))
 
     def set_collapsed(self, collapsed: bool):
         self._collapsed = collapsed

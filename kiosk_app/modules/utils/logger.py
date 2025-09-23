@@ -19,11 +19,17 @@ from modules.utils.remote_export import RemoteLogExporter, RemoteExportResult, R
 
 # Qt Bridge optional
 try:
-    from PyQt5.QtCore import QObject, pyqtSignal as Signal, QCoreApplication  # type: ignore
-    _HAVE_QT = True
+    from modules.qt import QtCore, Signal
 except Exception:
     _HAVE_QT = False
+    QtCore = None  # type: ignore
+    Signal = None  # type: ignore
     QObject = object  # type: ignore
+    QCoreApplication = None  # type: ignore
+else:
+    _HAVE_QT = True
+    QObject = QtCore.QObject
+    QCoreApplication = QtCore.QCoreApplication
 
 # ========= Konfiguration =========
 
@@ -376,11 +382,10 @@ def stop_remote_export_schedule() -> None:
 # ========= Qt Message Handler =========
 
 def _install_qt_message_handler():
-    if not _HAVE_QT:
+    if not _HAVE_QT or QtCore is None:
         return
-    try:
-        from PyQt5.QtCore import qInstallMessageHandler  # type: ignore
-    except Exception:
+    qinstall = getattr(QtCore, "qInstallMessageHandler", None)
+    if qinstall is None:
         return
 
     log = get_logger("qt")
@@ -395,7 +400,7 @@ def _install_qt_message_handler():
             pass
 
     try:
-        qInstallMessageHandler(handler)
+        qinstall(handler)
     except Exception:
         pass
 

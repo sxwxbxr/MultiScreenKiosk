@@ -1,5 +1,7 @@
 from services.browser_service import BrowserService, make_webview
-from PyQt5.QtWebEngineWidgets import QWebEngineView
+from modules.qt import QtWebEngineWidgets
+
+QWebEngineView = QtWebEngineWidgets.QWebEngineView
 
 def test_webview_factory():
     v = make_webview()
