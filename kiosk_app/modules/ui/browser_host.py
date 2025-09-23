@@ -1,9 +1,12 @@
 from typing import Optional
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QMovie
-from PyQt5.QtWidgets import QWidget, QStackedLayout, QLabel
-from PyQt5.QtWebEngineWidgets import QWebEngineView
+from modules.qt import Qt, QtGui, QtWidgets, QtWebEngineWidgets
+
+QMovie = QtGui.QMovie
+QWidget = QtWidgets.QWidget
+QStackedLayout = QtWidgets.QStackedLayout
+QLabel = QtWidgets.QLabel
+QWebEngineView = QtWebEngineWidgets.QWebEngineView
 
 from modules.utils.i18n import tr, i18n
 

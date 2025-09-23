@@ -4,12 +4,22 @@ from typing import Optional, List
 
 import os
 import re
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QTextCursor
-from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QLineEdit,
-    QCheckBox, QPushButton, QTextEdit, QFileDialog, QMessageBox, QWidget
-)
+from modules.qt import Qt, QtCore, QtGui, QtWidgets
+
+QTimer = QtCore.QTimer
+QTextCursor = QtGui.QTextCursor
+QDialog = QtWidgets.QDialog
+QVBoxLayout = QtWidgets.QVBoxLayout
+QHBoxLayout = QtWidgets.QHBoxLayout
+QLabel = QtWidgets.QLabel
+QComboBox = QtWidgets.QComboBox
+QLineEdit = QtWidgets.QLineEdit
+QCheckBox = QtWidgets.QCheckBox
+QPushButton = QtWidgets.QPushButton
+QTextEdit = QtWidgets.QTextEdit
+QFileDialog = QtWidgets.QFileDialog
+QMessageBox = QtWidgets.QMessageBox
+QWidget = QtWidgets.QWidget
 
 from modules.utils.logger import get_log_path, get_log_bridge
 from modules.utils.i18n import tr, i18n

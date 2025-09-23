@@ -7,13 +7,22 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal as Signal, pyqtSlot as Slot
-from PyQt5.QtGui import QKeySequence
-from PyQt5.QtWidgets import (
-    QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QStackedWidget,
-    QGridLayout, QLabel, QApplication, QToolButton, QMenu, QMessageBox,
-    QShortcut,
-)
+from modules.qt import Qt, QtCore, QtGui, QtWidgets, Signal, Slot
+
+QTimer = QtCore.QTimer
+QKeySequence = QtGui.QKeySequence
+QMainWindow = QtWidgets.QMainWindow
+QWidget = QtWidgets.QWidget
+QHBoxLayout = QtWidgets.QHBoxLayout
+QVBoxLayout = QtWidgets.QVBoxLayout
+QStackedWidget = QtWidgets.QStackedWidget
+QGridLayout = QtWidgets.QGridLayout
+QLabel = QtWidgets.QLabel
+QApplication = QtWidgets.QApplication
+QToolButton = QtWidgets.QToolButton
+QMenu = QtWidgets.QMenu
+QMessageBox = QtWidgets.QMessageBox
+QShortcut = QtWidgets.QShortcut
 
 from modules.ui.app_state import AppState, ViewMode
 from modules.ui.sidebar import Sidebar
@@ -217,7 +226,7 @@ class MainWindow(QMainWindow):
         act_settings = m.addAction(tr("Settings"))
         act_settings.triggered.connect(self.open_settings)
         pos = self.overlay_burger.mapToGlobal(self.overlay_burger.rect().bottomLeft())
-        m.exec_(pos)
+        m.exec(pos)
 
     def _nudge_local_apps(self):
     # nur sichtbare Widgets der aktuellen Ansicht anstossen
@@ -623,7 +632,7 @@ class MainWindow(QMainWindow):
             restore_handler=self._restore_config,
             parent=self
         )
-        if dlg.exec_():
+        if dlg.exec():
             res = dlg.results()
 
             restored_cfg = res.get("restored_config")

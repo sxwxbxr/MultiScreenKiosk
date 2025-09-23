@@ -3,9 +3,7 @@ import time
 import requests
 
 try:  # pragma: no cover - optional Qt dependency
-    from PyQt5.QtCore import QTimer, QObject, pyqtSignal as Signal, QUrl  # type: ignore
-    from PyQt5.QtWebEngineWidgets import QWebEngineView  # type: ignore
-    _QT_AVAILABLE = True
+    from modules.qt import QtCore, QtWebEngineWidgets, Signal
 except Exception:  # pragma: no cover - testing fallback
     _QT_AVAILABLE = False
 
@@ -61,6 +59,12 @@ except Exception:  # pragma: no cover - testing fallback
 
         def reload(self):
             pass
+else:
+    _QT_AVAILABLE = True
+    QObject = QtCore.QObject
+    QTimer = QtCore.QTimer
+    QUrl = QtCore.QUrl
+    QWebEngineView = QtWebEngineWidgets.QWebEngineView
 
 from modules.utils.logger import get_logger
 

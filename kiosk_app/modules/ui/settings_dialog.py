@@ -3,15 +3,33 @@ from __future__ import annotations
 from typing import Optional, Dict, Any, List, Callable, Set
 from copy import deepcopy
 from pathlib import Path
-from PyQt5.QtCore import Qt, QPoint, pyqtSignal as Signal, QTime
-from PyQt5.QtGui import QKeySequence
-from PyQt5.QtWidgets import (
-    QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QComboBox, QCheckBox, QLineEdit, QFileDialog, QMessageBox,
-    QKeySequenceEdit, QMenu, QGridLayout, QSpinBox, QTableWidget,
-    QAbstractItemView, QHeaderView, QTabWidget, QTimeEdit, QSizePolicy,
-    QAbstractSpinBox
-)
+from modules.qt import Qt, QtCore, QtGui, QtWidgets, Signal
+
+QPoint = QtCore.QPoint
+QTime = QtCore.QTime
+QKeySequence = QtGui.QKeySequence
+QDialog = QtWidgets.QDialog
+QWidget = QtWidgets.QWidget
+QVBoxLayout = QtWidgets.QVBoxLayout
+QHBoxLayout = QtWidgets.QHBoxLayout
+QLabel = QtWidgets.QLabel
+QPushButton = QtWidgets.QPushButton
+QComboBox = QtWidgets.QComboBox
+QCheckBox = QtWidgets.QCheckBox
+QLineEdit = QtWidgets.QLineEdit
+QFileDialog = QtWidgets.QFileDialog
+QMessageBox = QtWidgets.QMessageBox
+QKeySequenceEdit = QtWidgets.QKeySequenceEdit
+QMenu = QtWidgets.QMenu
+QGridLayout = QtWidgets.QGridLayout
+QSpinBox = QtWidgets.QSpinBox
+QTableWidget = QtWidgets.QTableWidget
+QAbstractItemView = QtWidgets.QAbstractItemView
+QHeaderView = QtWidgets.QHeaderView
+QTabWidget = QtWidgets.QTabWidget
+QTimeEdit = QtWidgets.QTimeEdit
+QSizePolicy = QtWidgets.QSizePolicy
+QAbstractSpinBox = QtWidgets.QAbstractSpinBox
 
 # Log Viewer und Log Pfad
 from modules.ui.log_viewer import LogViewer
@@ -33,10 +51,10 @@ _log = get_logger(__name__)
 def _event_pos(event) -> QPoint:
     """Return a QPoint from a mouse event for both Qt5 and Qt6."""
 
-    # PyQt6 introduced position()/globalPosition() returning QPointF. PyQt5
+    # PyQt6 introduced position()/globalPosition() returning QPointF. Qt 5
     # still uses pos()/globalPos() which already return QPoint. Access the
-    # new API when available but gracefully fall back to the PyQt5 methods so
-    # the dialog keeps working after the downgrade.
+    # new API when available but gracefully fall back to the Qt 5 methods so
+    # the dialog keeps working with legacy bindings.
     if hasattr(event, "position"):
         pos = event.position()
         if hasattr(pos, "toPoint"):
@@ -896,11 +914,11 @@ class SettingsDialog(QDialog):
             actions[0].trigger()
             return
         pos = self.btn_config.mapToGlobal(self.btn_config.rect().bottomLeft())
-        self._config_menu.exec_(pos)
+        self._config_menu.exec(pos)
 
     def _open_remote_export_dialog(self):
         dlg = RemoteExportDialog(self._remote_export_settings, self)
-        if dlg.exec_():
+        if dlg.exec():
             result = dlg.result_settings()
             if result is not None:
                 self._remote_export_settings = deepcopy(result)
@@ -908,13 +926,13 @@ class SettingsDialog(QDialog):
 
     def _open_schedule_dialog(self) -> None:
         dlg = ScheduleEditorDialog(self._schedule_payload, self._source_names, self)
-        if dlg.exec_():
+        if dlg.exec():
             self._schedule_payload = dlg.result_schedule()
             self._update_schedule_summary()
 
     def _open_shortcut_dialog(self) -> None:
         dlg = ShortcutEditorDialog(self._shortcut_map, self)
-        if dlg.exec_():
+        if dlg.exec():
             self._shortcut_map = dlg.result_shortcuts()
             self._update_shortcut_summary()
 
@@ -1033,7 +1051,7 @@ class SettingsDialog(QDialog):
         m.setIcon(QMessageBox.Warning)
         m.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
         m.setDefaultButton(QMessageBox.No)
-        res = m.exec_()
+        res = m.exec()
 
         if res == QMessageBox.Yes:
             self._result = {

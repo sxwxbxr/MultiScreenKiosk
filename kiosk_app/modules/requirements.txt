@@ -1,5 +1,7 @@
-PyQt5>=5.15
-PyQtWebEngine>=5.15
+PySide6>=6.5
+PySide6-QtWebEngine>=6.5
+PyQt6>=6.5
+PyQt6-WebEngine>=6.5
 requests>=2.31
 psutil>=5.9
 pytest>=8.0

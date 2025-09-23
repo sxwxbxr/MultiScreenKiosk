@@ -13,9 +13,14 @@ from dataclasses import dataclass
 from threading import Thread, Event
 from typing import Optional, Set, Dict, List
 
-from PyQt5.QtCore import Qt, QTimer, QSize, pyqtSignal as Signal
-from PyQt5.QtGui import QWindow
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel
+from modules.qt import Qt, QtCore, QtGui, QtWidgets, Signal
+
+QTimer = QtCore.QTimer
+QSize = QtCore.QSize
+QWindow = QtGui.QWindow
+QWidget = QtWidgets.QWidget
+QVBoxLayout = QtWidgets.QVBoxLayout
+QLabel = QtWidgets.QLabel
 
 from modules.utils.logger import get_logger
 

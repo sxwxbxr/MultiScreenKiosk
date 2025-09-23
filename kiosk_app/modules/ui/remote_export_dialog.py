@@ -5,27 +5,26 @@ from copy import deepcopy
 import re
 from typing import Dict, List, Optional
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import (
-    QCheckBox,
-    QComboBox,
-    QDialog,
-    QFileDialog,
-    QFormLayout,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QListWidget,
-    QListWidgetItem,
-    QPushButton,
-    QPlainTextEdit,
-    QSpinBox,
-    QStackedWidget,
-    QTextEdit,
-    QVBoxLayout,
-    QWidget,
-)
+from modules.qt import Qt, QtWidgets
+
+QCheckBox = QtWidgets.QCheckBox
+QComboBox = QtWidgets.QComboBox
+QDialog = QtWidgets.QDialog
+QFileDialog = QtWidgets.QFileDialog
+QFormLayout = QtWidgets.QFormLayout
+QGroupBox = QtWidgets.QGroupBox
+QHBoxLayout = QtWidgets.QHBoxLayout
+QLabel = QtWidgets.QLabel
+QLineEdit = QtWidgets.QLineEdit
+QListWidget = QtWidgets.QListWidget
+QListWidgetItem = QtWidgets.QListWidgetItem
+QPushButton = QtWidgets.QPushButton
+QPlainTextEdit = QtWidgets.QPlainTextEdit
+QSpinBox = QtWidgets.QSpinBox
+QStackedWidget = QtWidgets.QStackedWidget
+QTextEdit = QtWidgets.QTextEdit
+QVBoxLayout = QtWidgets.QVBoxLayout
+QWidget = QtWidgets.QWidget
 
 from modules.utils.config_loader import RemoteLogDestination, RemoteLogExportSettings
 from modules.utils.i18n import tr
